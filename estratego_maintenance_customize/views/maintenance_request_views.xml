@@ -32,29 +32,26 @@
         </field>
     </record>
 
-    <!-- Kanban: add field + show responsible below employee_id (fallback: below Requested by) -->
     <record id="maintenance_request_kanban_customize" model="ir.ui.view">
         <field name="name">maintenance.request.kanban.customize</field>
         <field name="model">maintenance.request</field>
         <field name="inherit_id" ref="maintenance.hr_equipment_request_view_kanban"/>
         <field name="arch" type="xml">
-            <xpath expr="//kanban/field[@name='user_id']" position="after">
-                <field name="responsible_employee_id"/>
+
+            <!-- Inserta Responsable debajo de employee_id (o user_id si employee_id no está) -->
+            <xpath expr="(//kanban/templates/t[@t-name='kanban-box']//field[@name='employee_id']
+                        | //kanban/templates/t[@t-name='kanban-box']//field[@name='user_id'])[1]"
+                position="after">
+
+                <div t-if="record.responsible_employee_id.raw_value" class="mt4">
+                    <span class="fa fa-user text-success me-1"/>
+                    <span class="text-success">
+                        <field name="responsible_employee_id"/>
+                    </span>
+                </div>
+
             </xpath>
 
-            <!-- Preferred: below employee_id if it exists in the template -->
-            <xpath expr="//t[@t-name='kanban-box']//field[@name='employee_id']" position="after" optional="1">
-                <span name="responsible_employee_id" t-if="record.responsible_employee_id.raw_value" class="text-success">
-                    Responsable: <field name="responsible_employee_id"/><br/>
-                </span>
-            </xpath>
-
-            <!-- Fallback: below 'Requested by' block in standard view -->
-            <xpath expr="//t[@t-name='kanban-box']//span[@name='owner_user_id']" position="after" optional="1">
-                <span name="responsible_employee_id" t-if="record.responsible_employee_id.raw_value" class="text-success">
-                    Responsable: <field name="responsible_employee_id"/><br/>
-                </span>
-            </xpath>
         </field>
     </record>
 
