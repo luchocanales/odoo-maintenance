@@ -14,7 +14,7 @@
     "summary": "Customized fields for Maintenance.",
     "author": "Estratego Consulting SAC",
     "license": "LGPL-3",
-    "depends": ["maintenance", "hr", "base_address_city"],
+    "depends": ["base","maintenance", "hr"],
     "data": [
         "views/maintenance_request_views.xml",
     ],
