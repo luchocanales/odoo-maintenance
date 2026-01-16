@@ -14,6 +14,7 @@ class MaintenanceRequest(models.Model):
         comodel_name="res.partner",
         string="Taller",
         help="Proveedor / taller asignado para la atención de la solicitud.",
+        domain=[("company_type", "=", "company"), ("parent_id", "=", False)],
     )
     city_id = fields.Many2one(
         comodel_name="res.city",
