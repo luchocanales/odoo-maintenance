@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="maintenance_request_form_technical_report_inherit" model="ir.ui.view">
+        <field name="name">maintenance.request.form.technical.report.inherit</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
+        <field name="arch" type="xml">
+
+            <!-- Botón de impresión en encabezado -->
+            <xpath expr="//header" position="inside">
+                <button
+                    name="action_print_technical_report"
+                    type="object"
+                    string="Imprimir Informe Técnico"
+                    class="btn-primary"
+                    icon="fa-print"
+                />
+            </xpath>
+
+            <!-- Página de informe técnico -->
+            <xpath expr="//sheet/notebook" position="inside">
+                <page string="Informe Técnico">
+                    <group>
+                        <group>
+                            <field name="technical_report_number" readonly="1"/>
+                            <field name="technical_currency_id" groups="base.group_system"/>
+                        </group>
+                    </group>
+
+                    <separator string="3. Evaluación"/>
+                    <group>
+                        <field name="technical_evaluation_html" widget="html" placeholder="Describa la evaluación técnica..."/>
+                    </group>
+
+                    <separator string="4. Sistemas Evaluados"/>
+                    <group col="4">
+                        <field name="eval_engine"/>
+                        <field name="eval_steering"/>
+                        <field name="eval_suspension"/>
+                        <field name="eval_tires"/>
+                        <field name="eval_transmission"/>
+                        <field name="eval_electrical"/>
+                        <field name="eval_brakes"/>
+                        <field name="eval_chassis"/>
+                    </group>
+
+                    <separator string="5. Evidencias fotográficas"/>
+                    <group>
+                        <group string="5.1 Evidencias">
+                            <field name="technical_evidence_ids" domain="[('section','=','5_1')]" context="{'default_section':'5_1'}">
+                                <tree editable="bottom">
+                                    <field name="sequence"/>
+                                    <field name="name"/>
+                                    <field name="description"/>
+                                    <field name="image" widget="image" class="oe_avatar"/>
+                                </tree>
+                                <form string="Evidencia">
+                                    <sheet>
+                                        <group>
+                                            <field name="section" readonly="1"/>
+                                            <field name="sequence"/>
+                                            <field name="name"/>
+                                            <field name="description"/>
+                                            <field name="image" widget="image"/>
+                                        </group>
+                                    </sheet>
+                                </form>
+                            </field>
+                        </group>
+                        <group string="5.2 Evidencias">
+                            <field name="technical_evidence_ids" domain="[('section','=','5_2')]" context="{'default_section':'5_2'}">
+                                <tree editable="bottom">
+                                    <field name="sequence"/>
+                                    <field name="name"/>
+                                    <field name="description"/>
+                                    <field name="image" widget="image" class="oe_avatar"/>
+                                </tree>
+                                <form string="Evidencia">
+                                    <sheet>
+                                        <group>
+                                            <field name="section" readonly="1"/>
+                                            <field name="sequence"/>
+                                            <field name="name"/>
+                                            <field name="description"/>
+                                            <field name="image" widget="image"/>
+                                        </group>
+                                    </sheet>
+                                </form>
+                            </field>
+                        </group>
+                    </group>
+
+                    <separator string="Análisis / Cálculo"/>
+                    <group>
+                        <field name="technical_cost_analysis_html" widget="html" placeholder="Detalle de cálculos, porcentajes, criterios..."/>
+                    </group>
+                    <group>
+                        <field name="technical_contribution_ids">
+                            <tree editable="bottom">
+                                <field name="sequence"/>
+                                <field name="party"/>
+                                <field name="percent"/>
+                                <field name="amount"/>
+                                <field name="note"/>
+                            </tree>
+                        </field>
+                    </group>
+
+                    <separator string="7. Conclusiones"/>
+                    <group>
+                        <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
+                        <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
+                    </group>
+                </page>
+            </xpath>
+
+        </field>
+    </record>
+</odoo>

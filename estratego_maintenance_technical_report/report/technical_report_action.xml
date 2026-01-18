@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="paperformat_maintenance_technical" model="report.paperformat">
+        <field name="name">Informe Técnico - Mantenimiento</field>
+        <field name="default" eval="False"/>
+        <field name="format">A4</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">20</field>
+        <field name="margin_bottom">20</field>
+        <field name="margin_left">10</field>
+        <field name="margin_right">10</field>
+        <field name="header_line" eval="False"/>
+        <field name="header_spacing">10</field>
+        <field name="dpi">90</field>
+    </record>
+
+    <record id="action_report_maintenance_technical" model="ir.actions.report">
+        <field name="name">Informe Técnico</field>
+        <field name="model">maintenance.request</field>
+        <field name="report_type">qweb-pdf</field>
+        <field name="report_name">estratego_maintenance_technical_report.report_maintenance_technical_document</field>
+        <field name="report_file">estratego_maintenance_technical_report.report_maintenance_technical_document</field>
+        <field name="print_report_name">'Informe Tecnico - %s' % (object.technical_report_number or object.name)</field>
+        <field name="paperformat_id" ref="estratego_maintenance_technical_report.paperformat_maintenance_technical"/>
+        <field name="binding_model_id" ref="maintenance.model_maintenance_request"/>
+        <field name="binding_type">report</field>
+    </record>
+</odoo>
