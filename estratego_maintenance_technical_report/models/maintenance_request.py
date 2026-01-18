@@ -14,15 +14,6 @@ class MaintenanceTechnicalEvidence(models.Model):
         ondelete="cascade",
     )
     sequence = fields.Integer(default=10)
-    section = fields.Selection(
-        selection=[
-            ("5_1", "5.1 Evidencias fotográficas"),
-            ("5_2", "5.2 Evidencias fotográficas"),
-        ],
-        string="Sección",
-        required=True,
-        default="5_1",
-    )
     name = fields.Char(string="Título")
     description = fields.Text(string="Descripción")
     image = fields.Image(string="Imagen", max_width=1920, max_height=1920)
@@ -85,6 +76,9 @@ class MaintenanceRequest(models.Model):
     eval_chassis = fields.Boolean(string="Chasis")
 
     # Sección 5
+    technical_introduction_html = fields.Html(string="5. Introducción", sanitize=False)
+
+    # Sección 6 (Evidencias)
     technical_evidence_ids = fields.One2many(
         comodel_name="maintenance.technical.evidence",
         inverse_name="maintenance_request_id",
@@ -92,6 +86,7 @@ class MaintenanceRequest(models.Model):
     )
 
     # Análisis / contribución de costos (texto libre + líneas)
+    # Nota: Se imprime dentro de "7. Conclusiones" según formato solicitado.
     technical_cost_analysis_html = fields.Html(string="Análisis / Cálculo", sanitize=False)
     technical_contribution_ids = fields.One2many(
         comodel_name="maintenance.technical.contribution",

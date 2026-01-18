@@ -33,7 +33,8 @@
                     </group>
 
                     <separator string="4. Sistemas Evaluados"/>
-                    <group col="4">
+                    <!-- Compacto: más columnas para usar espacio horizontal -->
+                    <group col="8">
                         <field name="eval_engine"/>
                         <field name="eval_steering"/>
                         <field name="eval_suspension"/>
@@ -44,72 +45,51 @@
                         <field name="eval_chassis"/>
                     </group>
 
-                    <separator string="5. Evidencias fotográficas"/>
+                    <separator string="5. Introducción"/>
                     <group>
-                        <group string="5.1 Evidencias">
-                            <field name="technical_evidence_ids" domain="[('section','=','5_1')]" context="{'default_section':'5_1'}">
-                                <tree editable="bottom">
-                                    <field name="sequence"/>
-                                    <field name="name"/>
-                                    <field name="description"/>
-                                    <field name="image" widget="image" class="oe_avatar"/>
-                                </tree>
-                                <form string="Evidencia">
-                                    <sheet>
-                                        <group>
-                                            <field name="section" readonly="1"/>
-                                            <field name="sequence"/>
-                                            <field name="name"/>
-                                            <field name="description"/>
-                                            <field name="image" widget="image"/>
-                                        </group>
-                                    </sheet>
-                                </form>
-                            </field>
-                        </group>
-                        <group string="5.2 Evidencias">
-                            <field name="technical_evidence_ids" domain="[('section','=','5_2')]" context="{'default_section':'5_2'}">
-                                <tree editable="bottom">
-                                    <field name="sequence"/>
-                                    <field name="name"/>
-                                    <field name="description"/>
-                                    <field name="image" widget="image" class="oe_avatar"/>
-                                </tree>
-                                <form string="Evidencia">
-                                    <sheet>
-                                        <group>
-                                            <field name="section" readonly="1"/>
-                                            <field name="sequence"/>
-                                            <field name="name"/>
-                                            <field name="description"/>
-                                            <field name="image" widget="image"/>
-                                        </group>
-                                    </sheet>
-                                </form>
-                            </field>
-                        </group>
+                        <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..."/>
                     </group>
 
-                    <separator string="Análisis / Cálculo"/>
+                    <separator string="6. Evidencias"/>
                     <group>
-                        <field name="technical_cost_analysis_html" widget="html" placeholder="Detalle de cálculos, porcentajes, criterios..."/>
-                    </group>
-                    <group>
-                        <field name="technical_contribution_ids">
+                        <field name="technical_evidence_ids">
                             <tree editable="bottom">
                                 <field name="sequence"/>
-                                <field name="party"/>
-                                <field name="percent"/>
-                                <field name="amount"/>
-                                <field name="note"/>
+                                <field name="name"/>
+                                <field name="description"/>
+                                <field name="image" widget="image" class="oe_avatar"/>
                             </tree>
+                            <form string="Evidencia">
+                                <sheet>
+                                    <group>
+                                        <field name="sequence"/>
+                                        <field name="name"/>
+                                        <field name="description"/>
+                                        <field name="image" widget="image"/>
+                                    </group>
+                                </sheet>
+                            </form>
                         </field>
                     </group>
 
                     <separator string="7. Conclusiones"/>
                     <group>
-                        <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
-                        <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
+                        <group string="Análisis / Cálculo">
+                            <field name="technical_cost_analysis_html" widget="html" placeholder="Detalle de cálculos, porcentajes, criterios..."/>
+                            <field name="technical_contribution_ids">
+                                <tree editable="bottom">
+                                    <field name="sequence"/>
+                                    <field name="party"/>
+                                    <field name="percent"/>
+                                    <field name="amount"/>
+                                    <field name="note"/>
+                                </tree>
+                            </field>
+                        </group>
+                        <group string="Conclusiones">
+                            <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
+                            <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
+                        </group>
                     </group>
                 </page>
             </xpath>
