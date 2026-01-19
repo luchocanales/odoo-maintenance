@@ -49,13 +49,12 @@
                     
 
                     <separator string="Evidencias"/>
-                    <group>
                         <field name="technical_evidence_ids" nolabel="1" >
-                            <tree editable="bottom">
+                            <tree editable="bottom" >
                                 <field name="sequence"/>
                                 <field name="name"/>
-                                <field name="description"/>
-                                <field name="image" widget="image" class="oe_avatar"/>
+                                <field name="description" widget="text" nolabel="1"/>
+                                <field name="image" widget="image" class="oe_avatar" width="90"/>
                             </tree>
                             <form string="Evidencia">
                                 <sheet>
@@ -68,8 +67,6 @@
                                 </sheet>
                             </form>
                         </field>
-                    </group>
-
                     <separator string="Conclusiones"/>
                             <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
                             <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
