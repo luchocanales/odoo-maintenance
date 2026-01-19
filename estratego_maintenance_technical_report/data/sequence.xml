@@ -3,7 +3,7 @@
     <record id="seq_maintenance_technical_report" model="ir.sequence">
         <field name="name">Informe Técnico de Mantenimiento</field>
         <field name="code">maintenance.technical.report</field>
-        <field name="prefix">IT</field>
+        <field name="prefix">ITM</field>
         <field name="suffix">-%(year)s</field>
         <field name="padding">8</field>
         <field name="company_id" eval="False"/>

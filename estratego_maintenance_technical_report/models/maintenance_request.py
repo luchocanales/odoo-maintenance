@@ -55,13 +55,6 @@ class MaintenanceRequest(models.Model):
         default="/",
     )
 
-    technical_currency_id = fields.Many2one(
-        comodel_name="res.currency",
-        string="Moneda Informe",
-        default=lambda self: self.env.company.currency_id.id,
-        required=True,
-    )
-
     # Sección 3
     technical_evaluation_html = fields.Html(string="3. Evaluación", sanitize=False)
 
@@ -83,15 +76,6 @@ class MaintenanceRequest(models.Model):
         comodel_name="maintenance.technical.evidence",
         inverse_name="maintenance_request_id",
         string="Evidencias",
-    )
-
-    # Análisis / contribución de costos (texto libre + líneas)
-    # Nota: Se imprime dentro de "7. Conclusiones" según formato solicitado.
-    technical_cost_analysis_html = fields.Html(string="Análisis / Cálculo", sanitize=False)
-    technical_contribution_ids = fields.One2many(
-        comodel_name="maintenance.technical.contribution",
-        inverse_name="maintenance_request_id",
-        string="Participación de costos",
     )
 
     # Cierre

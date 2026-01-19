@@ -5,6 +5,7 @@
             <t t-set="o" t-value="doc"/>
             <t t-set="company" t-value="o.company_id"/>
             <div class="page">
+
                 <h2 style="text-align:center;">
                     INFORME TÉCNICO<t t-esc="o.technical_report_number"/>
                 </h2>
@@ -35,8 +36,6 @@
                                 <t t-esc="o.responsible_employee_id.name if 'responsible_employee_id' in o._fields and o.responsible_employee_id else ''"/>
                             </td>
                         </tr>
-
-                        <!-- ✅ FIX: "Dirigido a" usando order_id.partner_id (y NO partner_id directo) -->
                         <tr>
                             <td style="border:1px solid #000;"><strong>Dirigido a:</strong></td>
                             <td style="border:1px solid #000;" colspan="3">
@@ -57,7 +56,7 @@
                 <!-- 2. DATOS DEL EQUIPO (del mantenimiento) -->
                 <table class="table table-sm" style="width:100%; border:1px solid #000; margin-top:10px;">
                     <div style="margin-top:10px;">
-                        <h4>1. DATOS DEL EQUIPO</h4>
+                        <h4>2. DATOS DEL EQUIPO</h4>
                     </div>
                     <tbody>
                         <t t-if="'fleet_vehicle_id' in o._fields and o.fleet_vehicle_id">
@@ -174,37 +173,7 @@
                 <div style="margin-top:10px;">
                     <h4>7. CONCLUSIONES</h4>
 
-                    <div style="margin-top:6px;">
-                        <strong>Análisis / Cálculo</strong>
-                    </div>
-                    <div t-if="o.technical_cost_analysis_html" t-raw="o.technical_cost_analysis_html"/>
 
-                    <t t-if="o.technical_contribution_ids">
-                        <table class="table table-sm" style="width:100%; border:1px solid #000; margin-top:6px;">
-                            <thead>
-                                <tr>
-                                    <th style="border:1px solid #000;">Parte</th>
-                                    <th style="border:1px solid #000; width:12%; text-align:right;">%</th>
-                                    <th style="border:1px solid #000; width:25%; text-align:right;">Monto</th>
-                                    <th style="border:1px solid #000;">Nota</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <t t-foreach="o.technical_contribution_ids" t-as="ln">
-                                    <tr>
-                                        <td style="border:1px solid #000;"><t t-esc="ln.party"/></td>
-                                        <td style="border:1px solid #000; text-align:right;"><t t-esc="('%.2f' % (ln.percent or 0.0))"/></td>
-                                        <td style="border:1px solid #000; text-align:right;"><t t-esc="ln.amount and format_amount(env, ln.amount, ln.currency_id) or ''"/></td>
-                                        <td style="border:1px solid #000;"><t t-esc="ln.note or ''"/></td>
-                                    </tr>
-                                </t>
-                            </tbody>
-                        </table>
-                    </t>
-
-                    <div style="margin-top:10px;">
-                        <strong>Conclusiones</strong>
-                    </div>
                     <div t-if="o.technical_conclusions_html" t-raw="o.technical_conclusions_html"/>
                     <div t-if="o.technical_waiting_response_text" style="margin-top:6px;"><t t-esc="o.technical_waiting_response_text"/></div>
                 </div>

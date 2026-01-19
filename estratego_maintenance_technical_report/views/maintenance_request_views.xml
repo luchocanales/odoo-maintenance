@@ -23,14 +23,11 @@
                     <group>
                         <group>
                             <field name="technical_report_number" readonly="1"/>
-                            <field name="technical_currency_id" groups="base.group_system"/>
                         </group>
                     </group>
 
                     <separator string="3. Evaluación"/>
-                    <group>
-                        <field name="technical_evaluation_html" widget="html" placeholder="Describa la evaluación técnica..."/>
-                    </group>
+                        <field name="technical_evaluation_html" widget="html" placeholder="Describa la evaluación técnica..." nolabel="1"/>
 
                     <separator string="4. Sistemas Evaluados"/>
                     <!-- Compacto: más columnas para usar espacio horizontal -->
@@ -46,13 +43,12 @@
                     </group>
 
                     <separator string="5. Introducción"/>
-                    <group>
-                        <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..."/>
-                    </group>
+                        <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..." nolabel="1"/>
+                    
 
                     <separator string="6. Evidencias"/>
                     <group>
-                        <field name="technical_evidence_ids">
+                        <field name="technical_evidence_ids" nolabel="1">
                             <tree editable="bottom">
                                 <field name="sequence"/>
                                 <field name="name"/>
@@ -73,23 +69,8 @@
                     </group>
 
                     <separator string="7. Conclusiones"/>
-                    <group>
-                        <group string="Análisis / Cálculo">
-                            <field name="technical_cost_analysis_html" widget="html" placeholder="Detalle de cálculos, porcentajes, criterios..."/>
-                            <field name="technical_contribution_ids">
-                                <tree editable="bottom">
-                                    <field name="sequence"/>
-                                    <field name="party"/>
-                                    <field name="percent"/>
-                                    <field name="amount"/>
-                                    <field name="note"/>
-                                </tree>
-                            </field>
-                        </group>
-                        <group string="Conclusiones">
                             <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
                             <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
-                        </group>
                     </group>
                 </page>
             </xpath>
