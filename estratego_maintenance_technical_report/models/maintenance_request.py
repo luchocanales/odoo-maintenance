@@ -36,14 +36,6 @@ class MaintenanceTechnicalContribution(models.Model):
     amount = fields.Monetary(string="Monto")
     note = fields.Char(string="Nota")
 
-    currency_id = fields.Many2one(
-        comodel_name="res.currency",
-        string="Moneda",
-        related="maintenance_request_id.technical_currency_id",
-        store=True,
-        readonly=True,
-    )
-
 
 class MaintenanceRequest(models.Model):
     _inherit = "maintenance.request"
