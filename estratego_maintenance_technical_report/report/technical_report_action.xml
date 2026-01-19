@@ -21,7 +21,7 @@
         <field name="report_name">estratego_maintenance_technical_report.report_maintenance_technical_document</field>
         <field name="report_file">estratego_maintenance_technical_report.report_maintenance_technical_document</field>
         <field name="print_report_name">'Informe Tecnico - %s' % (object.technical_report_number or object.name)</field>
-        <<!--field name="paperformat_id" ref="estratego_maintenance_technical_report.paperformat_maintenance_technical"/>-->
+        <!--field name="paperformat_id" ref="estratego_maintenance_technical_report.paperformat_maintenance_technical"/>-->
         <field name="binding_model_id" ref="maintenance.model_maintenance_request"/>
         <field name="binding_type">report</field>
     </record>
