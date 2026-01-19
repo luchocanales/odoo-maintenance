@@ -71,7 +71,6 @@
                     <separator string="7. Conclusiones"/>
                             <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
                             <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
-                    </group>
                 </page>
             </xpath>
 
