@@ -19,24 +19,6 @@ class MaintenanceTechnicalEvidence(models.Model):
     image = fields.Image(string="Imagen", max_width=1920, max_height=1920)
 
 
-class MaintenanceTechnicalContribution(models.Model):
-    _name = "maintenance.technical.contribution"
-    _description = "Participación de costos - Informe Técnico"
-    _order = "sequence, id"
-
-    maintenance_request_id = fields.Many2one(
-        comodel_name="maintenance.request",
-        string="Solicitud de mantenimiento",
-        required=True,
-        ondelete="cascade",
-    )
-    sequence = fields.Integer(default=10)
-    party = fields.Char(string="Parte / Responsable", required=True)
-    percent = fields.Float(string="%", digits=(16, 2))
-    amount = fields.Monetary(string="Monto")
-    note = fields.Char(string="Nota")
-
-
 class MaintenanceRequest(models.Model):
     _inherit = "maintenance.request"
 
