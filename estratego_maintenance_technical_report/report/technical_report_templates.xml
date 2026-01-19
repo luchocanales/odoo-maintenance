@@ -7,7 +7,7 @@
             <div class="page">
 
                 <h2 style="text-align:center;">
-                    INFORME TÉCNICO<t t-esc="o.technical_report_number"/>
+                    INFORME TÉCNICO <t t-esc="o.technical_report_number"/>
                 </h2>
 
                 <!-- 1. DATOS GENERALES (se obtiene de la solicitud) -->

@@ -44,13 +44,13 @@
                         <field name="eval_chassis"/>
                     </group>
 
-                    <separator string="5. Introducción"/>
+                    <separator string="Introducción"/>
                         <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..." nolabel="1"/>
                     
 
                     <separator string="Evidencias"/>
-                    <group>
-                        <field name="technical_evidence_ids" nolabel="1">
+                    <group col="1">
+                        <field name="technical_evidence_ids" nolabel="1" colspan="4"  class="o_full_width">
                             <tree editable="bottom">
                                 <field name="sequence"/>
                                 <field name="name"/>
