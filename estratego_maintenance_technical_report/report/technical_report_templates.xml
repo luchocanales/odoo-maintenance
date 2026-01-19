@@ -6,16 +6,14 @@
             <t t-set="company" t-value="o.company_id"/>
             <div class="page">
                 <h2 style="text-align:center;">
-                    ASUNTO: INFORME TÉCNICO DE DAÑOS Y PERJUICIOS <t t-esc="o.technical_report_number"/>
+                    INFORME TÉCNICO<t t-esc="o.technical_report_number"/>
                 </h2>
 
                 <!-- 1. DATOS GENERALES (se obtiene de la solicitud) -->
+                <div style="margin-top:10px;">
+                    <h4>1. DATOS GENERALES</h4>
+                </div>
                 <table class="table table-sm" style="width:100%; border:1px solid #000;">
-                    <thead>
-                        <tr>
-                            <th colspan="4" style="border:1px solid #000; background:#f2f2f2;">1. DATOS GENERALES</th>
-                        </tr>
-                    </thead>
                     <tbody>
                         <tr>
                             <td style="border:1px solid #000; width:15%;"><strong>Área:</strong></td>
@@ -58,11 +56,9 @@
 
                 <!-- 2. DATOS DEL EQUIPO (del mantenimiento) -->
                 <table class="table table-sm" style="width:100%; border:1px solid #000; margin-top:10px;">
-                    <thead>
-                        <tr>
-                            <th colspan="6" style="border:1px solid #000; background:#f2f2f2;">2. DATOS DEL EQUIPO</th>
-                        </tr>
-                    </thead>
+                    <div style="margin-top:10px;">
+                        <h4>1. DATOS DEL EQUIPO</h4>
+                    </div>
                     <tbody>
                         <t t-if="'fleet_vehicle_id' in o._fields and o.fleet_vehicle_id">
                             <tr>
@@ -163,7 +159,8 @@
                                 <div><strong><t t-esc="ev.name or ''"/></strong></div>
                                 <div t-if="ev.description"><t t-esc="ev.description"/></div>
                                 <div t-if="ev.image" style="margin-top:6px;">
-                                    <img t-att-src="'data:image/png;base64,%s' % ev.image" style="max-height:260px; max-width:100%;"/>
+                                    <img t-att-src="image_data_uri(ev.image)"
+                                         style="max-height:260px; max-width:100%; height:auto; display:block;"/>
                                 </div>
                             </div>
                         </t>
