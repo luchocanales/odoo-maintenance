@@ -53,8 +53,8 @@
                             <tree editable="bottom" >
                                 <field name="sequence"/>
                                 <field name="name"/>
-                                <field name="description" widget="text" nolabel="1"/>
-                                <field name="image" widget="image" class="oe_avatar" width="90"/>
+                                <field name="description" widget="text"/>
+                                <field name="image" widget="image" class="oe_avatar"/>
                             </tree>
                             <form string="Evidencia">
                                 <sheet>

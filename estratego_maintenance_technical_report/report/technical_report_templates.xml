@@ -177,7 +177,8 @@
                     <div t-if="o.technical_conclusions_html" t-raw="o.technical_conclusions_html"/>
                     <div t-if="o.technical_waiting_response_text" style="margin-top:6px;"><t t-esc="o.technical_waiting_response_text"/></div>
                 </div>
-
+                <br />
+                <br />
                 <!-- Firma -->
                 <div style="margin-top:20px;">
                     <div>Atentamente.</div>
