@@ -10,6 +10,11 @@ class MaintenanceRequest(models.Model):
         string="Responsable",
         help="Empleado responsable de atender la solicitud.",
     )
+    supervisor_employee_id = fields.Many2one(
+        comodel_name="hr.employee",
+        string="Supervisor",
+        help="Empleado supervisor del mantenimiento.",
+    )    
     workshop_partner_id = fields.Many2one(
         comodel_name="res.partner",
         string="Taller",

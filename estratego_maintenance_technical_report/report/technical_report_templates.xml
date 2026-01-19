@@ -27,13 +27,13 @@
                             </td>
                         </tr>
                         <tr>
-                            <td style="border:1px solid #000;"><strong>Encargado Sup:</strong></td>
+                            <td style="border:1px solid #000;"><strong>Supervisor:</strong></td>
                             <td style="border:1px solid #000;">
-                                <t t-esc="(o.employee_id and o.employee_id.name) or (o.user_id and o.user_id.name) or ''"/>
+                                <t t-esc="o.supervisor_employee_id.name"/>
                             </td>
-                            <td style="border:1px solid #000;"><strong>Personal Evaluador:</strong></td>
+                            <td style="border:1px solid #000;"><strong>Evaluador:</strong></td>
                             <td style="border:1px solid #000;">
-                                <t t-esc="o.responsible_employee_id.name if 'responsible_employee_id' in o._fields and o.responsible_employee_id else ''"/>
+                                <t t-esc="o.responsible_employee_id.name"/>
                             </td>
                         </tr>
                         <tr>
@@ -43,7 +43,7 @@
                                    t-value="(
                                        ('workshop_partner_id' in o._fields and o.workshop_partner_id and o.workshop_partner_id.name)
                                        or
-                                       (o.order_id and o.order_id.partner_id)
+                                       ('order_id' in o._fields and o.order_id and 'partner_id' in o.order_id._fields and o.order_id.partner_id and o.order_id.partner_id.name)
                                        or
                                        ''
                                    )"/>
@@ -182,12 +182,12 @@
                 <div style="margin-top:20px;">
                     <div>Atentamente.</div>
                     <div style="margin-top:10px;">
-                        <t t-if="'responsible_employee_id' in o._fields and o.responsible_employee_id and o.responsible_employee_id.maintenance_signature_html">
-                            <div t-raw="o.responsible_employee_id.maintenance_signature_html"/>
+                        <t t-if="'supervisor_employee_id' in o._fields and o.supervisor_employee_id and o.supervisor_employee_id.maintenance_signature_html">
+                            <div t-raw="o.supervisor_employee_id.maintenance_signature_html"/>
                         </t>
                         <t t-else="">
                             <div style="margin-top:20px;">
-                                <strong><t t-esc="o.responsible_employee_id.name if 'responsible_employee_id' in o._fields and o.responsible_employee_id else ''"/></strong>
+                                <strong><t t-esc="o.supervisor_employee_id.name if 'supervisor_employee_id' in o._fields and o.supervisor_employee_id else ''"/></strong>
                             </div>
                         </t>
                     </div>

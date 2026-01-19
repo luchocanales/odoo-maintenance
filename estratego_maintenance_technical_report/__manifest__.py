@@ -18,7 +18,8 @@
         "maintenance",
         "hr",
         "web",
-        "estratego_fleet_vehicle_rental"
+        "estratego_fleet_vehicle_rental",
+        "estratego_maintenance_customize"
     ],
     "data": [
         "security/ir.model.access.csv",
