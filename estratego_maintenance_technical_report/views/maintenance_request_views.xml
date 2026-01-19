@@ -50,7 +50,7 @@
 
                     <separator string="Evidencias"/>
                     <group col="1">
-                        <field name="technical_evidence_ids" nolabel="1" colspan="2" >
+                        <field name="technical_evidence_ids" nolabel="1" colspan="1" >
                             <tree editable="bottom">
                                 <field name="sequence"/>
                                 <field name="name"/>
