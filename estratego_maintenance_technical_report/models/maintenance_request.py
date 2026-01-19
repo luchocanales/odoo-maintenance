@@ -56,6 +56,21 @@ class MaintenanceRequest(models.Model):
     technical_waiting_response_text = fields.Text(string="Mensaje / Cierre")
     technical_conclusions_html = fields.Html(string="Conclusiones", sanitize=False)
 
+
+    def _needs_technical_sequence(self):
+        """True si el correlativo está vacío o en '/'. """
+        self.ensure_one()
+        return not self.technical_report_number or self.technical_report_number in ("", "/")
+
+    def _assign_technical_sequence_if_missing(self):
+        """Asigna correlativo SOLO si falta."""
+        for rec in self:
+            if rec._needs_technical_sequence():
+                rec.technical_report_number = self.env["ir.sequence"].sudo().next_by_code(
+                    "maintenance.technical.report"
+                ) or "N*PENDIENTE"
+
+
     @api.model_create_multi
     def create(self, vals_list):
         seq = self.env["ir.sequence"]
@@ -63,6 +78,27 @@ class MaintenanceRequest(models.Model):
             if not vals.get("technical_report_number") or vals.get("technical_report_number") == "/":
                 vals["technical_report_number"] = seq.next_by_code("maintenance.technical.report") or "/"
         return super().create(vals_list)
+
+
+    def write(self, vals):
+        res = super().write(vals)
+
+        # Evitar recursión
+        if self.env.context.get("skip_tr_seq"):
+            return res
+
+        missing = self.filtered(lambda r: not r.technical_report_number or r.technical_report_number in ("", "/"))
+        if missing:
+            updates = {}
+            seq = self.env["ir.sequence"].sudo()
+            for r in missing:
+                updates[r.id] = seq.next_by_code("maintenance.technical.report") or "N*PENDIENTE"
+
+            for r in missing.sudo():
+                r.with_context(skip_tr_seq=True).write({"technical_report_number": updates[r.id]})
+
+        return res
+    
 
     def action_print_technical_report(self):
         self.ensure_one()

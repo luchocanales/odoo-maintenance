@@ -63,7 +63,7 @@
                             <tr>
                                 <td style="border:1px solid #000; width:12%;"><strong>Unidad:</strong></td>
                                 <td style="border:1px solid #000; width:21%;">
-                                    <t t-esc="o.fleet_vehicle_id.vehicle_type if 'vehicle_type' in o.fleet_vehicle_id._fields else ''"/>
+                                    <t t-esc="o.fleet_vehicle_id.category_id.name"/>
                                 </td>
                                 <td style="border:1px solid #000; width:12%;"><strong>Modelo:</strong></td>
                                 <td style="border:1px solid #000; width:21%;">

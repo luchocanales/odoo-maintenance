@@ -26,16 +26,18 @@
                         </group>
                     </group>
 
-                    <separator string="3. Evaluación"/>
+                    <separator string="Evaluación"/>
                         <field name="technical_evaluation_html" widget="html" placeholder="Describa la evaluación técnica..." nolabel="1"/>
 
-                    <separator string="4. Sistemas Evaluados"/>
+                    <separator string="Sistemas Evaluados"/>
                     <!-- Compacto: más columnas para usar espacio horizontal -->
-                    <group col="8">
+                    <group>
                         <field name="eval_engine"/>
                         <field name="eval_steering"/>
                         <field name="eval_suspension"/>
                         <field name="eval_tires"/>
+                    </group>
+                    <group>
                         <field name="eval_transmission"/>
                         <field name="eval_electrical"/>
                         <field name="eval_brakes"/>
@@ -46,7 +48,7 @@
                         <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..." nolabel="1"/>
                     
 
-                    <separator string="6. Evidencias"/>
+                    <separator string="Evidencias"/>
                     <group>
                         <field name="technical_evidence_ids" nolabel="1">
                             <tree editable="bottom">
@@ -68,7 +70,7 @@
                         </field>
                     </group>
 
-                    <separator string="7. Conclusiones"/>
+                    <separator string="Conclusiones"/>
                             <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
                             <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
                 </page>
