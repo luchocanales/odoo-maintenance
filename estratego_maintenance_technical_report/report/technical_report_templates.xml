@@ -2,7 +2,7 @@
 <odoo>
     <template id="report_maintenance_technical">
         <t t-call="web.external_layout">
-            <t t-set="o" t-value="doc.with_context(lang=doc.partner_id.lang)"/>
+            <t t-set="o" t-value="doc"/>
             <t t-set="company" t-value="o.company_id"/>
             <div class="page">
 
@@ -43,7 +43,7 @@
                                    t-value="(
                                        ('workshop_partner_id' in o._fields and o.workshop_partner_id and o.workshop_partner_id.name)
                                        or
-                                       ('order_id' in o._fields and o.order_id and 'partner_id' in o.order_id._fields and o.order_id.partner_id and o.order_id.partner_id.name)
+                                       (o.order_id and o.order_id.partner_id)
                                        or
                                        ''
                                    )"/>
