@@ -67,6 +67,13 @@
                                 </sheet>
                             </form>
                         </field>
+
+                    <separator string="Monto a cobrar"/>
+                        <group col="4">
+                            <field name="technical_charge_currency_id" options="{'no_create': True}"/>
+                            <field name="technical_charge_amount" widget="monetary"/>
+                        </group>
+
                     <separator string="Conclusiones"/>
                             <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
                             <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
