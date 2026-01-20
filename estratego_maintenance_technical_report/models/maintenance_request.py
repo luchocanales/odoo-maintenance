@@ -71,21 +71,9 @@ class MaintenanceRequest(models.Model):
     technical_waiting_response_text = fields.Text(string="Mensaje / Cierre")
     technical_conclusions_html = fields.Html(string="Conclusiones", sanitize=False)
 
-    # ---------------------------------------------------------
+    # ---------------------------
     # Helpers
-    # ---------------------------------------------------------
-    def _needs_technical_sequence(self):
-        self.ensure_one()
-        return not self.technical_report_number or self.technical_report_number in ("", "/")
-
-    def _assign_technical_sequence_if_missing(self):
-        """Asigna correlativo SOLO si falta."""
-        for rec in self:
-            if rec._needs_technical_sequence():
-                rec.technical_report_number = self.env["ir.sequence"].sudo().next_by_code(
-                    "maintenance.technical.report"
-                ) or "N*PENDIENTE"
-
+    # ---------------------------
     def _get_schedule_date_str(self):
         self.ensure_one()
         dt = self.schedule_date or fields.Datetime.now()
@@ -98,7 +86,8 @@ class MaintenanceRequest(models.Model):
         Tipo: service
         sale_ok: True
         """
-        product = self.env["product.product"].sudo().search(
+        Product = self.env["product.product"].sudo()
+        product = Product.search(
             [
                 ("name", "=", "Cargo por Daños y Desgaste"),
                 ("detailed_type", "=", "service"),
@@ -113,9 +102,14 @@ class MaintenanceRequest(models.Model):
             ))
         return product
 
-    # ---------------------------------------------------------
-    # Create / Write
-    # ---------------------------------------------------------
+    # ---------------------------
+    # Correlativo
+    # ---------------------------
+    def _needs_technical_sequence(self):
+        """True si el correlativo está vacío o en '/'. """
+        self.ensure_one()
+        return not self.technical_report_number or self.technical_report_number in ("", "/")
+
     @api.model_create_multi
     def create(self, vals_list):
         seq = self.env["ir.sequence"]
@@ -125,56 +119,65 @@ class MaintenanceRequest(models.Model):
 
         records = super().create(vals_list)
 
-        # Si nace con monto/moneda, sincroniza a extra_service_ids
+        # Si ya nace con monto/moneda, sincroniza
         records._sync_charge_to_extra_service_ids(trigger_fields={"create"})
         return records
 
     def write(self, vals):
-        # Cambios que deben disparar sync a vehicle.rental.extra.service
-        sync_fields = {"technical_charge_amount", "technical_charge_currency_id"}
-
+        # Dispara sync si cambia monto/moneda o correlativo (porque description depende del correlativo)
+        sync_fields = {"technical_charge_amount", "technical_charge_currency_id", "technical_report_number"}
         must_sync = bool(sync_fields.intersection(vals.keys()))
+
         res = super().write(vals)
 
-        # Evitar recursiones internas
-        if self.env.context.get("skip_tr_seq") or self.env.context.get("skip_tr_charge_sync"):
+        # Evitar recursión del correlativo
+        if self.env.context.get("skip_tr_seq"):
             return res
 
-        # Backfill correlativo para existentes (tu lógica actual solo asigna correlativo y retorna :contentReference[oaicite:1]{index=1})
-        # Aquí lo mantenemos, pero además aprovechamos para re-sync porque description usa correlativo.
+        # Backfill correlativo para existentes (si aún está vacío o '/')
         missing = self.filtered(lambda r: not r.technical_report_number or r.technical_report_number in ("", "/"))
         if missing:
             seq = self.env["ir.sequence"].sudo()
-            updates = {r.id: (seq.next_by_code("maintenance.technical.report") or "N*PENDIENTE") for r in missing}
             for r in missing.sudo():
-                r.with_context(skip_tr_seq=True).write({"technical_report_number": updates[r.id]})
-            must_sync = True
+                r.with_context(skip_tr_seq=True).write(
+                    {"technical_report_number": seq.next_by_code("maintenance.technical.report") or "N*PENDIENTE"}
+                )
+            must_sync = True  # description del extra depende del correlativo
 
-        if must_sync:
+        # Sync cargo -> vehicle.rental.extra.service
+        if must_sync and not self.env.context.get("skip_tr_charge_sync"):
             self._sync_charge_to_extra_service_ids(trigger_fields=set(vals.keys()))
 
         return res
 
-    # ---------------------------------------------------------
-    # Sync -> vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
-    # ---------------------------------------------------------
+    # ---------------------------
+    # Sync con vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
+    # ---------------------------
     def _sync_charge_to_extra_service_ids(self, trigger_fields=None):
         """
-        Crea/actualiza el registro en vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
+        Crea/actualiza un registro en vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
         relacionado a este informe (maintenance_request_id), con:
-          - line.service_currency_id = technical_charge_currency_id :contentReference[oaicite:2]{index=2}
-          - extra requiere: extra_date, product_id, product_qty :contentReference[oaicite:3]{index=3}
+          - line.service_currency_id = technical_charge_currency_id
           - extra.amount = technical_charge_amount
-          - extra.description = correlativo del informe
-          - extra.product_id = 'Cargo por Daños y Desgaste'
+          - extra.description = technical_report_number
+          - extra.product_id = producto 'Cargo por Daños y Desgaste'
+          - extra.extra_date = hoy (required)
+          - extra.product_qty = 1 (required)
         """
         trigger_fields = trigger_fields or set()
 
-        # Si los modelos no están, no romper
+        # Si no existe el modelo de rental, salir sin romper
         if "vehicle.rental.line" not in self.env or "vehicle.rental.extra.service" not in self.env:
             return
 
         Extra = self.env["vehicle.rental.extra.service"].sudo()
+
+        # ✅ HARD CHECK: ya que decidiste quedarte con herencia, este campo DEBE existir
+        if "maintenance_request_id" not in Extra._fields:
+            raise ValidationError(_(
+                "Falta el campo 'maintenance_request_id' en 'vehicle.rental.extra.service'.\n"
+                "Esto indica que la herencia no está cargando (revisa __init__.py / __manifest__.py depends / upgrade del módulo)."
+            ))
 
         for rec in self:
             if "vehicle_rental_line_id" not in rec._fields:
@@ -184,36 +187,50 @@ class MaintenanceRequest(models.Model):
             if not line:
                 continue
 
-            # 1) Moneda de servicios en rental line (OPERACIONES)
-            if rec.technical_charge_currency_id and "service_currency_id" in line._fields:
-                line.with_context(skip_tr_charge_sync=True).sudo().write({
-                    "service_currency_id": rec.technical_charge_currency_id.id
-                })
+            currency = rec.technical_charge_currency_id
+            amount_value = float(rec.technical_charge_amount or 0.0)
+            description_value = (rec.technical_report_number or "").strip()
 
-            # 2) Buscar extra del informe (por maintenance_request_id, que agregamos por herencia)
-            related = line.extra_service_ids.filtered(
-                lambda x: hasattr(x, "maintenance_request_id") and x.maintenance_request_id.id == rec.id
+            # 1) Setear moneda de servicios (Operaciones) en la línea rental
+            if currency and "service_currency_id" in line._fields:
+                line.with_context(skip_tr_charge_sync=True).sudo().write({"service_currency_id": currency.id})
+
+            # 2) Buscar el extra EXACTO de este informe (sin depender del one2many cache)
+            extra = Extra.search(
+                [
+                    ("vehicle_rental_line_id", "=", line.id),
+                    ("maintenance_request_id", "=", rec.id),
+                ],
+                limit=1,
             )
 
             product = rec._get_damage_wear_product()
-            vals_extra = {
-                "extra_date": fields.Date.context_today(rec),
-                "product_id": product.id,
-                "product_qty": 1.0,
-                "amount": float(rec.technical_charge_amount or 0.0),
-                "description": (rec.technical_report_number or "").strip(),
-                "maintenance_request_id": rec.id,
+
+            vals_to_set = {
+                "vehicle_rental_line_id": line.id,  # ✅ explícito para evitar registros “sueltos”
+                "maintenance_request_id": rec.id,   # ✅ vínculo determinístico
+                "extra_date": fields.Date.context_today(rec),  # required en el modelo :contentReference[oaicite:3]{index=3}
+                "product_id": product.id,                    # required :contentReference[oaicite:4]{index=4}
+                "product_qty": 1.0,                          # required :contentReference[oaicite:5]{index=5}
+                "amount": amount_value,
+                "description": description_value,
             }
 
-            if related:
-                related[:1].with_context(skip_tr_charge_sync=True).sudo().write(vals_extra)
+            if extra:
+                # no actualices vehicle_rental_line_id/maintenance_request_id si ya existe (por orden/seguridad)
+                extra.with_context(skip_tr_charge_sync=True).write({
+                    "extra_date": vals_to_set["extra_date"],
+                    "product_id": vals_to_set["product_id"],
+                    "product_qty": vals_to_set["product_qty"],
+                    "amount": vals_to_set["amount"],
+                    "description": vals_to_set["description"],
+                })
             else:
-                # Crear por O2M (asigna vehicle_rental_line_id automáticamente)
-                line.with_context(skip_tr_charge_sync=True).sudo().extra_service_ids.create(vals_extra)
+                Extra.with_context(skip_tr_charge_sync=True).create(vals_to_set)
 
-    # ---------------------------------------------------------
-    # Report
-    # ---------------------------------------------------------
+    # ---------------------------
+    # Acción reporte
+    # ---------------------------
     def action_print_technical_report(self):
         self.ensure_one()
         return self.env.ref(
