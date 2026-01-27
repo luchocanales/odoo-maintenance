@@ -12,7 +12,7 @@
                 <field name="supervisor_employee_id" options="{'no_create': True}"/>
                 <field name="workshop_partner_id" options="{'no_create': True}"/>
                 <field name="city_id" domain="[('country_id.code','=','PE')]" options="{'no_create': True}"/>
-                <field name="delivery_guide"/>
+                
             </xpath>
 
             <xpath expr="//field[@name='user_id']" position="attributes">

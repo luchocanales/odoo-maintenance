@@ -30,8 +30,3 @@ class MaintenanceRequest(models.Model):
         tracking=True,
         help="Ciudad donde se atenderá la solicitud.",
     )
-    delivery_guide = fields.Char(
-        string="Guía de Remisión",
-        tracking=True,
-        help="Número de guía de remisión asociada a la solicitud.",
-    )
