@@ -152,57 +152,22 @@
                 <!-- 6. EVIDENCIAS -->
                 <div style="margin-top:10px;">
                     <h4>6. EVIDENCIAS</h4>
-
                     <t t-if="o.technical_evidence_ids">
-                        <t t-set="evids" t-value="o.technical_evidence_ids"/>
-
-                        <!-- Tabla 2 columnas -->
-                        <table style="width:100%; border-collapse:separate; border-spacing:0 8px;">
-                            <tbody>
-                                <t t-foreach="range(0, len(evids), 2)" t-as="i">
-                                    <tr>
-                                        <!-- Columna 1 -->
-                                        <td style="width:50%; vertical-align:top; padding-right:6px;">
-                                            <t t-set="ev" t-value="evids[i]"/>
-                                            <div style="border:1px solid #000; padding:8px;">
-                                                <div><strong><t t-esc="ev.name or ''"/></strong></div>
-                                                <div t-if="ev.description"><t t-esc="ev.description"/></div>
-                                                <div t-if="ev.image" style="margin-top:6px;">
-                                                    <img t-att-src="image_data_uri(ev.image)"
-                                                        style="max-height:260px; max-width:100%; height:auto; display:block;"/>
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        <!-- Columna 2 -->
-                                        <td style="width:50%; vertical-align:top; padding-left:6px;">
-                                            <t t-if="i + 1 &lt; len(evids)">
-                                                <t t-set="ev2" t-value="evids[i + 1]"/>
-                                                <div style="border:1px solid #000; padding:8px;">
-                                                    <div><strong><t t-esc="ev2.name or ''"/></strong></div>
-                                                    <div t-if="ev2.description"><t t-esc="ev2.description"/></div>
-                                                    <div t-if="ev2.image" style="margin-top:6px;">
-                                                        <img t-att-src="image_data_uri(ev2.image)"
-                                                            style="max-height:260px; max-width:100%; height:auto; display:block;"/>
-                                                    </div>
-                                                </div>
-                                            </t>
-                                            <t t-else="">
-                                                <!-- Si queda impar, deja la segunda columna vacía -->
-                                                <div style="min-height:1px;"></div>
-                                            </t>
-                                        </td>
-                                    </tr>
-                                </t>
-                            </tbody>
-                        </table>
+                        <t t-foreach="o.technical_evidence_ids" t-as="ev">
+                            <div style="border:1px solid #000; padding:8px; margin-bottom:8px;">
+                                <div><strong><t t-esc="ev.name or ''"/></strong></div>
+                                <div t-if="ev.description"><t t-esc="ev.description"/></div>
+                                <div t-if="ev.image" style="margin-top:6px;">
+                                    <img t-att-src="image_data_uri(ev.image)"
+                                         style="max-height:260px; max-width:100%; height:auto; display:block;"/>
+                                </div>
+                            </div>
+                        </t>
                     </t>
-
                     <t t-else="">
                         <div style="min-height:60px; border:1px solid #000; padding:8px;"></div>
                     </t>
                 </div>
-
 
                 <!-- 7. CONCLUSIONES (incluye Análisis / Cálculo) -->
                 <div style="margin-top:10px;">
