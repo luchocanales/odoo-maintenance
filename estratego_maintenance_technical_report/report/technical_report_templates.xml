@@ -21,7 +21,7 @@
                             <td style="border:1px solid #000; width:35%;">
                                 <t t-esc="o.maintenance_team_id.name if o.maintenance_team_id else ''"/>
                             </td>
-                            <td style="border:1px solid #000; width:20%;"><strong>Fecha de Inspección:</strong></td>
+                            <td style="border:1px solid #000; width:20%;"><strong>Fecha de Reparación:</strong></td>
                             <td style="border:1px solid #000; width:30%;">
                                 <t t-esc="o._get_schedule_date_str()"/>
                             </td>
