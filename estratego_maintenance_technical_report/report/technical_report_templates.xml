@@ -228,8 +228,8 @@
                 <div style="margin-top:20px;">
                     <div>Atentamente.</div>
                     <div style="margin-top:10px;">
-                        <t t-if="o.supervisor_employee_id and o.supervisor_employee_id.signature_html">
-                            <div t-raw="o.supervisor_employee_id.signature_html"/>
+                        <t t-if="o.supervisor_signature_html">
+                            <div t-raw="o.supervisor_signature_html"/>
                         </t>
                         <div style="margin-top:20px;">
                                 <strong><t t-esc="o.supervisor_employee_id.name if o.supervisor_employee_id else ''"/></strong>

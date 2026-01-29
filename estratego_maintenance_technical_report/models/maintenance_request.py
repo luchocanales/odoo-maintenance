@@ -74,9 +74,21 @@ class MaintenanceRequest(models.Model):
     technical_waiting_response_text = fields.Text(string="Mensaje / Cierre")
     technical_conclusions_html = fields.Html(string="Conclusiones", sanitize=False)
 
+    # Firma
+    supervisor_signature_html = fields.Html(
+        string="Firma Supervisor",
+        compute="_compute_supervisor_signature_html",
+        compute_sudo=True,
+    )
     # ---------------------------
     # Helpers
     # ---------------------------
+    @api.depends("supervisor_employee_id")
+    def _compute_supervisor_signature_html(self):
+        for rec in self:
+            emp = rec.supervisor_employee_id.sudo()
+            rec.supervisor_signature_html = emp.signature_html or False
+                
     def _get_schedule_date_str(self):
         self.ensure_one()
         dt = self.schedule_date or fields.Datetime.now()
