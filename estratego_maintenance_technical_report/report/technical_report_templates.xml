@@ -213,8 +213,8 @@
                     <div t-if="o.technical_cost_table" t-raw="o.technical_cost_table"/>
                 </div>
 
-                <!-- 7. TABLA DE COSTOS -->
-                <div style="margin-top:10px;">
+
+                <div style="margin-top:20px;">
                     <h4>8. COMPROMISO DEL CLIENTE</h4>
                     <div> El cliente
                                 <t t-set="partner_name"
@@ -230,8 +230,8 @@
 
                 </div>
 
-                <!-- 8. CONCLUSIONES (incluye Análisis / Cálculo) -->
-                <div style="margin-top:10px;">
+                <!-- 9. CONCLUSIONES (incluye Análisis / Cálculo) -->
+                <div style="margin-top:20px;">
                     <h4>9. CONCLUSIONES</h4>
                     <div t-if="o.technical_conclusions_html" t-raw="o.technical_conclusions_html"/>
                     <div t-if="o.technical_waiting_response_text" style="margin-top:6px;"><t t-esc="o.technical_waiting_response_text"/></div>
