@@ -232,7 +232,7 @@
                             <div t-raw="o.supervisor_signature_html"/>
                         </t>
                         <div style="margin-top:20px;">
-                                <strong><t t-esc="o.supervisor_employee_id.name if o.supervisor_employee_id else ''"/></strong>
+                                <strong><t t-esc="o.supervisor_name"/></strong>
                          </div>                        
                     </div>
                 </div>

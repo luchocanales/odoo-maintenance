@@ -77,18 +77,27 @@ class MaintenanceRequest(models.Model):
     # Firma
     supervisor_signature_html = fields.Html(
         string="Firma Supervisor",
-        compute="_compute_supervisor_signature_html",
+        compute="_compute_supervisor_public",
         compute_sudo=True,
     )
+
+    supervisor_name = fields.Char(string="Supervisor", compute="_compute_supervisor_public", compute_sudo=True)
     # ---------------------------
     # Helpers
     # ---------------------------
     @api.depends("supervisor_employee_id")
-    def _compute_supervisor_signature_html(self):
+    def _compute_supervisor_public(self):
+        Employee = self.env["hr.employee"].sudo()
         for rec in self:
-            emp = rec.supervisor_employee_id.sudo()
+            rec.supervisor_signature_html = False
+            rec.supervisor_name = False
+            if not rec.supervisor_employee_id:
+                continue
+    
+            emp = Employee.browse(rec.supervisor_employee_id.id)
             rec.supervisor_signature_html = emp.signature_html or False
-                
+            rec.supervisor_name = emp.name or False
+
     def _get_schedule_date_str(self):
         self.ensure_one()
         dt = self.schedule_date or fields.Datetime.now()
