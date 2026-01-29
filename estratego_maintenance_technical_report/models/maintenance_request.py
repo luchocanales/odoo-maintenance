@@ -53,7 +53,7 @@ class MaintenanceRequest(models.Model):
         string="Evidencias",
     )
 
-    # Cobro (entre Evidencias y Conclusiones)
+    # Cobro
     technical_charge_currency_id = fields.Many2one(
         comodel_name="res.currency",
         string="Moneda (Cobro)",
@@ -66,6 +66,8 @@ class MaintenanceRequest(models.Model):
         tracking=True,
         default=0.0,
     )
+
+    technical_cost_table = fields.Html(string="Tabla de Costos", sanitize=False)
 
     # Cierre
     technical_waiting_response_text = fields.Text(string="Mensaje / Cierre")
