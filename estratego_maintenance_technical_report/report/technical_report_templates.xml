@@ -40,7 +40,7 @@
                             <td style="border:1px solid #000;"><strong>Dirigido a:</strong></td>
                             <td style="border:1px solid #000;" colspan="3">
                                 <t t-set="partner_name"
-                                   t-value="(o.order_id and o.order_id.partner_id and o.order_id.partner_id.name) or  '')"/>
+                                   t-value="(o.order_id and o.order_id.partner_id and o.order_id.partner_id.name) or  '' "/>
                                 <t t-esc="partner_name"/>
                             </td>
                         </tr>
