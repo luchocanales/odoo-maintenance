@@ -56,10 +56,11 @@ class MaintenanceRequest(models.Model):
     # Cobro
     technical_charge_currency_id = fields.Many2one(
         comodel_name="res.currency",
+        related="currency_id",
         string="Moneda (Cobro)",
-        tracking=True,
-        default=lambda self: self.env.company.currency_id.id,
+        readonly=True
     )
+
     technical_charge_amount = fields.Monetary(
         string="Monto a cobrar",
         currency_field="technical_charge_currency_id",
