@@ -40,13 +40,7 @@
                             <td style="border:1px solid #000;"><strong>Dirigido a:</strong></td>
                             <td style="border:1px solid #000;" colspan="3">
                                 <t t-set="partner_name"
-                                   t-value="(
-                                       ('workshop_partner_id' in o._fields and o.workshop_partner_id and o.workshop_partner_id.name)
-                                       or
-                                       ('order_id' in o._fields and o.order_id and 'partner_id' in o.order_id._fields and o.order_id.partner_id and o.order_id.partner_id.name)
-                                       or
-                                       ''
-                                   )"/>
+                                   t-value="(o.order_id and o.order_id.partner_id and o.order_id.partner_id.name) or  '')"/>
                                 <t t-esc="partner_name"/>
                             </td>
                         </tr>
@@ -217,14 +211,6 @@
                 <div style="margin-top:20px;">
                     <h4>8. COMPROMISO DEL CLIENTE</h4>
                     <div> El cliente
-                                <t t-set="partner_name"
-                                   t-value="(
-                                       ('workshop_partner_id' in o._fields and o.workshop_partner_id and o.workshop_partner_id.name)
-                                       or
-                                       ('order_id' in o._fields and o.order_id and 'partner_id' in o.order_id._fields and o.order_id.partner_id and o.order_id.partner_id.name)
-                                       or
-                                       ''
-                                   )"/>
                                 <t t-esc="partner_name"/> se compromete al pago de <t t-esc="o.technical_charge_currency_id.symbol"/> <t t-esc="o.technical_charge_amount"/>
                     </div>
 
