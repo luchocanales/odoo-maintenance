@@ -33,7 +33,7 @@
                             </td>
                             <td style="border:1px solid #000;"><strong>Evaluador:</strong></td>
                             <td style="border:1px solid #000;">
-                                <t t-esc="o.responsible_employee_id.name"/>
+                                <t t-esc="o.responsible_name"/>
                             </td>
                         </tr>
                         <tr>

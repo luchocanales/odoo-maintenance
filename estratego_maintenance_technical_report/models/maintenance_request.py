@@ -82,6 +82,7 @@ class MaintenanceRequest(models.Model):
     )
 
     supervisor_name = fields.Char(string="Supervisor", compute="_compute_supervisor_public", compute_sudo=True)
+    responsible_name = fields.Char(string="Responsable", compute="_compute_supervisor_public", compute_sudo=True)
     # ---------------------------
     # Helpers
     # ---------------------------
@@ -91,12 +92,20 @@ class MaintenanceRequest(models.Model):
         for rec in self:
             rec.supervisor_signature_html = False
             rec.supervisor_name = False
+            rec.responsible_name = False
             if not rec.supervisor_employee_id:
+                continue
+
+            if not rec.responsible_employee_id:
                 continue
     
             emp = Employee.browse(rec.supervisor_employee_id.id)
             rec.supervisor_signature_html = emp.signature_html or False
             rec.supervisor_name = emp.name or False
+
+            emp = Employee.browse(rec.responsible_employee_id.id)
+            rec.responsible_name = emp.name or False
+
 
     def _get_schedule_date_str(self):
         self.ensure_one()
