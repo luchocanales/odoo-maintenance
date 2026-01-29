@@ -29,7 +29,7 @@
                         <tr>
                             <td style="border:1px solid #000;"><strong>Supervisor:</strong></td>
                             <td style="border:1px solid #000;">
-                                <t t-esc="o.supervisor_employee_id.name"/>
+                                <t t-esc="o.supervisor_name"/>
                             </td>
                             <td style="border:1px solid #000;"><strong>Evaluador:</strong></td>
                             <td style="border:1px solid #000;">
