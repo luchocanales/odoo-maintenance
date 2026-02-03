@@ -31,6 +31,9 @@
                 <field name="responsible_employee_id"/>
                 <field name="workshop_partner_id"/>
             </xpath>
+            <xpath expr="//field[@name='request_date']" position="replace">
+                <field name="schedule_date"/>
+                </xpath>            
         </field>
     </record>
 
@@ -40,7 +43,6 @@
         <field name="inherit_id" ref="maintenance.hr_equipment_request_view_kanban"/>
         <field name="arch" type="xml">
 
-            <!-- Inserta Responsable debajo de employee_id (o user_id si employee_id no está) -->
             <xpath expr="(//kanban/templates/t[@t-name='kanban-box']//field[@name='employee_id']
                         | //kanban/templates/t[@t-name='kanban-box']//field[@name='user_id'])[1]"
                 position="after">
