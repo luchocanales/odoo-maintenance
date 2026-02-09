@@ -256,22 +256,26 @@ class MaintenanceRequest(models.Model):
 
             currency = rec.technical_charge_currency_id
             #amount_value = float(rec.technical_charge_amount or 0.0)
-            # Partner para fiscal position / impuestos
-            partner = False
-            if line and "partner_id" in line._fields:
-                partner = line.partner_id
-            elif "partner_id" in rec._fields:
-                partner = rec.partner_id
 
-            # Monto SIN impuesto (usa taxes del producto "Cargo por Daños y Desgaste")
+            amount_included = float(rec.technical_charge_amount or 0.0)
             product = rec._get_damage_wear_product()
-            amount_value = rec._get_amount_without_tax(
-                rec.technical_charge_amount,
-                product=product,
-                partner=partner,
-                currency=currency,
-                company=rec.company_id,
-            )
+            
+            taxes = product.taxes_id
+            # (opcional) filtrar por compañía si aplica
+            taxes = taxes.filtered(lambda t: not t.company_id or t.company_id == rec.company_id)
+            
+            if taxes and amount_included:
+                # FORZAMOS a tratar el monto ingresado como "tax included"
+                res = taxes.with_company(rec.company_id).with_context(force_price_include=True).compute_all(
+                    amount_included,
+                    currency=rec.currency_id,
+                    quantity=1.0,
+                    product=product,
+                    partner=getattr(rec, "partner_id", False),
+                )
+                amount_value = float(res["total_excluded"])
+            else:
+                amount_value = amount_included
 
             description_value = (rec.technical_report_number or "").strip()
 
