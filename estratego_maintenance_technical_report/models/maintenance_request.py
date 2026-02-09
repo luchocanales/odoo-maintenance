@@ -183,6 +183,40 @@ class MaintenanceRequest(models.Model):
 
         return res
 
+
+    def _get_amount_without_tax(self, amount, product, partner=None, currency=None, company=None):
+        """Devuelve el monto sin impuestos a partir de un monto ingresado (posiblemente con impuesto incluido)."""
+        amount = float(amount or 0.0)
+        if not amount or not product:
+            return amount
+
+        company = company or self.company_id or self.env.company
+        currency = currency or (company.currency_id if company else self.env.company.currency_id)
+
+        # Impuestos de venta del producto, filtrados por compañía (si corresponde)
+        taxes = product.taxes_id
+        if company and "company_id" in taxes._fields:
+            taxes = taxes.filtered(lambda t: not t.company_id or t.company_id == company)
+
+        # Mapear por posición fiscal del partner (si existe)
+        fpos = getattr(partner, "property_account_position_id", False) if partner else False
+        if fpos and hasattr(fpos, "map_tax"):
+            taxes = fpos.map_tax(taxes, product, partner)
+
+        if not taxes:
+            return amount
+
+        # compute_all maneja price_include / price_exclude automáticamente
+        res = taxes.with_company(company).compute_all(
+            amount,
+            currency=currency,
+            quantity=1.0,
+            product=product,
+            partner=partner,
+        )
+        return float(res.get("total_excluded", amount))
+
+
     # ---------------------------
     # Sync con vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
     # ---------------------------
@@ -221,7 +255,24 @@ class MaintenanceRequest(models.Model):
                 continue
 
             currency = rec.technical_charge_currency_id
-            amount_value = float(rec.technical_charge_amount or 0.0)
+            #amount_value = float(rec.technical_charge_amount or 0.0)
+            # Partner para fiscal position / impuestos
+            partner = False
+            if line and "partner_id" in line._fields:
+                partner = line.partner_id
+            elif "partner_id" in rec._fields:
+                partner = rec.partner_id
+
+            # Monto SIN impuesto (usa taxes del producto "Cargo por Daños y Desgaste")
+            product = rec._get_damage_wear_product()
+            amount_value = rec._get_amount_without_tax(
+                rec.technical_charge_amount,
+                product=product,
+                partner=partner,
+                currency=currency,
+                company=rec.company_id,
+            )
+
             description_value = (rec.technical_report_number or "").strip()
 
             # 1) Setear moneda de servicios (Operaciones) en la línea rental
@@ -237,14 +288,12 @@ class MaintenanceRequest(models.Model):
                 limit=1,
             )
 
-            product = rec._get_damage_wear_product()
-
             vals_to_set = {
-                "vehicle_rental_line_id": line.id,  # ✅ explícito para evitar registros “sueltos”
-                "maintenance_request_id": rec.id,   # ✅ vínculo determinístico
-                "extra_date": fields.Date.context_today(rec),  # required en el modelo :contentReference[oaicite:3]{index=3}
-                "product_id": product.id,                    # required :contentReference[oaicite:4]{index=4}
-                "product_qty": 1.0,                          # required :contentReference[oaicite:5]{index=5}
+                "vehicle_rental_line_id": line.id, 
+                "maintenance_request_id": rec.id,  
+                "extra_date": fields.Date.context_today(rec),  
+                "product_id": product.id,
+                "product_qty": 1.0,
                 "amount": amount_value,
                 "description": description_value,
             }
