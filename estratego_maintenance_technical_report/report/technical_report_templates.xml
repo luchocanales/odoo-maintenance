@@ -209,9 +209,9 @@
 
 
                 <div style="margin-top:20px;">
-                    <h4>8. COMPROMISO DEL CLIENTE</h4>
+                    <h4>8. GASTOS QUE ASUME EL CLIENTE</h4>
                     <div> El cliente
-                                <t t-esc="partner_name"/> se compromete al pago de <t t-esc="o.technical_charge_currency_id.symbol"/> <t t-esc="o.technical_charge_amount"/>
+                                <t t-esc="partner_name"/> asume el pago de <t t-esc="o.technical_charge_currency_id.symbol"/> <t t-esc="o.technical_charge_amount"/>
                     </div>
 
                 </div>
