@@ -325,7 +325,8 @@ class MaintenancePerformanceReport(models.Model):
                     extra.legacy_invoice_move_id,
                     extra.product_id,
                     extra.product_qty,
-                    extra.amount_accepted
+                    extra.amount_accepted,
+                    extra.extra_date
                 FROM vehicle_rental_extra_service extra
                 WHERE extra.maintenance_request_id IS NOT NULL
                 ORDER BY extra.maintenance_request_id, extra.id DESC
@@ -448,18 +449,23 @@ class MaintenancePerformanceReport(models.Model):
                     ON fv.id = mr.fleet_vehicle_id
                 JOIN account_move am
                     ON am.company_id = mr.company_id
-                   AND am.invoice_origin = so.name
-                   AND am.rent_charge_type = 'charge'
+                   AND (
+                        am.invoice_origin = so.name
+                        OR so.name = ANY(
+                            regexp_split_to_array(COALESCE(am.invoice_origin, ''), '\s*,\s*')
+                        )
+                   )
+                   -- Históricos antiguos pueden tener rent_charge_type vacío o un
+                   -- valor legado. Solo excluimos explícitamente las facturas de renta.
+                   AND COALESCE(am.rent_charge_type, '') <> 'rent'
                    AND am.state = 'posted'
                    AND am.move_type IN ('out_invoice', 'out_receipt')
                 JOIN account_move_line aml
                     ON aml.move_id = am.id
                    AND aml.display_type = 'product'
                 WHERE NULLIF(BTRIM(mr.technical_report_number), '') IS NOT NULL
-                  AND (
-                        aml.rental_extra_service_id IS NULL
-                        OR aml.rental_extra_service_id = te.extra_id
-                  )
+                  -- Si la etiqueta contiene exactamente este Informe Técnico, esa
+                  -- evidencia es más fuerte que un vínculo histórico inferido.
                   AND POSITION(
                         LOWER(BTRIM(mr.technical_report_number))
                         IN LOWER(COALESCE(aml.name, ''))
@@ -499,6 +505,216 @@ class MaintenancePerformanceReport(models.Model):
                     balance
                 FROM historical_report_best_lines
                 WHERE best_line_count = 1
+            ),
+            historical_signature_sources AS (
+                /*
+                 * Segundo mecanismo de recuperación histórica: emparejamiento 1-a-1.
+                 *
+                 * Hay bases antiguas donde la etiqueta de la factura no conserva el
+                 * Informe Técnico. En esos casos se forma una firma estable con:
+                 *   liquidación + producto + cantidad + monto bruto + moneda.
+                 *
+                 * Si para una misma firma existen N mantenimientos técnicos sin vínculo
+                 * exacto y exactamente N líneas de factura posted sin vínculo, se
+                 * ordenan ambos lados cronológicamente y se emparejan 1-a-1. Así tres
+                 * mantenimientos iguales no pueden terminar usando la misma factura.
+                 */
+                SELECT
+                    te.maintenance_request_id,
+                    mr.order_id,
+                    te.extra_id,
+                    te.product_id,
+                    ROUND(COALESCE(te.product_qty, 0.0)::numeric, 6) AS qty_key,
+                    ROUND(
+                        COALESCE(
+                            NULLIF(mr.technical_charge_last_sent_amount, 0.0),
+                            NULLIF(mr.technical_charge_amount, 0.0)
+                        )::numeric,
+                        2
+                    ) AS gross_key,
+                    COALESCE(
+                        mr.technical_charge_last_sent_currency_id,
+                        mr.technical_charge_currency_id
+                    ) AS currency_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY
+                            mr.order_id,
+                            te.product_id,
+                            ROUND(COALESCE(te.product_qty, 0.0)::numeric, 6),
+                            ROUND(
+                                COALESCE(
+                                    NULLIF(mr.technical_charge_last_sent_amount, 0.0),
+                                    NULLIF(mr.technical_charge_amount, 0.0)
+                                )::numeric,
+                                2
+                            ),
+                            COALESCE(
+                                mr.technical_charge_last_sent_currency_id,
+                                mr.technical_charge_currency_id
+                            )
+                        ORDER BY
+                            COALESCE(te.extra_date, mr.request_date, mr.create_date::date),
+                            COALESCE(mr.technical_charge_last_sent_at, mr.create_date),
+                            te.extra_id,
+                            te.maintenance_request_id
+                    ) AS source_seq,
+                    COUNT(*) OVER (
+                        PARTITION BY
+                            mr.order_id,
+                            te.product_id,
+                            ROUND(COALESCE(te.product_qty, 0.0)::numeric, 6),
+                            ROUND(
+                                COALESCE(
+                                    NULLIF(mr.technical_charge_last_sent_amount, 0.0),
+                                    NULLIF(mr.technical_charge_amount, 0.0)
+                                )::numeric,
+                                2
+                            ),
+                            COALESCE(
+                                mr.technical_charge_last_sent_currency_id,
+                                mr.technical_charge_currency_id
+                            )
+                    ) AS source_count
+                FROM technical_extra te
+                JOIN maintenance_request mr
+                    ON mr.id = te.maintenance_request_id
+                LEFT JOIN exact_posted_billing epb
+                    ON epb.maintenance_request_id = te.maintenance_request_id
+                LEFT JOIN active_exact_invoice aei
+                    ON aei.maintenance_request_id = te.maintenance_request_id
+                WHERE NOT COALESCE(epb.has_posted_invoice, FALSE)
+                  AND aei.invoice_id IS NULL
+                  AND NOT EXISTS (
+                        SELECT 1
+                        FROM historical_report_line_match report_match
+                        WHERE report_match.maintenance_request_id = te.maintenance_request_id
+                  )
+                  AND mr.order_id IS NOT NULL
+                  AND te.product_id IS NOT NULL
+                  AND COALESCE(te.product_qty, 0.0) > 0.0
+                  AND COALESCE(
+                        NULLIF(mr.technical_charge_last_sent_amount, 0.0),
+                        NULLIF(mr.technical_charge_amount, 0.0)
+                      ) IS NOT NULL
+                  AND COALESCE(
+                        mr.technical_charge_last_sent_currency_id,
+                        mr.technical_charge_currency_id
+                      ) IS NOT NULL
+            ),
+            historical_signature_groups AS (
+                SELECT DISTINCT
+                    order_id,
+                    product_id,
+                    qty_key,
+                    gross_key,
+                    currency_id,
+                    source_count
+                FROM historical_signature_sources
+            ),
+            historical_signature_lines AS (
+                SELECT
+                    groups.order_id,
+                    groups.product_id,
+                    groups.qty_key,
+                    groups.gross_key,
+                    groups.currency_id,
+                    groups.source_count,
+                    aml.id AS line_id,
+                    am.id AS move_id,
+                    aml.price_total,
+                    aml.price_subtotal,
+                    aml.balance,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY
+                            groups.order_id,
+                            groups.product_id,
+                            groups.qty_key,
+                            groups.gross_key,
+                            groups.currency_id
+                        ORDER BY
+                            COALESCE(am.invoice_date, am.date, am.create_date::date),
+                            am.create_date,
+                            am.id,
+                            aml.sequence,
+                            aml.id
+                    ) AS line_seq,
+                    COUNT(*) OVER (
+                        PARTITION BY
+                            groups.order_id,
+                            groups.product_id,
+                            groups.qty_key,
+                            groups.gross_key,
+                            groups.currency_id
+                    ) AS line_count
+                FROM historical_signature_groups groups
+                JOIN sale_order so
+                    ON so.id = groups.order_id
+                JOIN account_move am
+                    ON am.company_id = so.company_id
+                   AND am.currency_id = groups.currency_id
+                   AND (
+                        am.invoice_origin = so.name
+                        OR so.name = ANY(
+                            regexp_split_to_array(COALESCE(am.invoice_origin, ''), '\s*,\s*')
+                        )
+                   )
+                   AND COALESCE(am.rent_charge_type, '') <> 'rent'
+                   AND am.state = 'posted'
+                   AND am.move_type IN ('out_invoice', 'out_receipt')
+                JOIN account_move_line aml
+                    ON aml.move_id = am.id
+                   AND aml.display_type = 'product'
+                   AND aml.rental_extra_service_id IS NULL
+                   AND aml.product_id = groups.product_id
+                   AND ROUND(COALESCE(aml.quantity, 0.0)::numeric, 6) = groups.qty_key
+                   AND ROUND(COALESCE(aml.price_total, 0.0)::numeric, 2) = groups.gross_key
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM historical_report_line_match report_match
+                    WHERE report_match.line_id = aml.id
+                )
+            ),
+            historical_signature_line_match AS (
+                SELECT
+                    source.maintenance_request_id,
+                    line.line_id,
+                    line.move_id,
+                    line.currency_id,
+                    line.price_total,
+                    line.price_subtotal,
+                    line.balance
+                FROM historical_signature_sources source
+                JOIN historical_signature_lines line
+                    ON line.order_id = source.order_id
+                   AND line.product_id = source.product_id
+                   AND line.qty_key = source.qty_key
+                   AND line.gross_key = source.gross_key
+                   AND line.currency_id = source.currency_id
+                   AND line.source_count = line.line_count
+                   AND source.source_seq = line.line_seq
+            ),
+            historical_resolved_line_match AS (
+                SELECT
+                    maintenance_request_id,
+                    line_id,
+                    move_id,
+                    currency_id,
+                    price_total,
+                    price_subtotal,
+                    balance
+                FROM historical_report_line_match
+
+                UNION ALL
+
+                SELECT
+                    maintenance_request_id,
+                    line_id,
+                    move_id,
+                    currency_id,
+                    price_total,
+                    price_subtotal,
+                    balance
+                FROM historical_signature_line_match
             ),
             legacy_line_scored AS (
                 /*
@@ -577,7 +793,7 @@ class MaintenancePerformanceReport(models.Model):
                     ON stats.move_id = am.id
                 WHERE NOT EXISTS (
                         SELECT 1
-                        FROM historical_report_line_match report_match
+                        FROM historical_resolved_line_match report_match
                         WHERE report_match.maintenance_request_id = te.maintenance_request_id
                     )
                   AND (
@@ -752,7 +968,7 @@ class MaintenancePerformanceReport(models.Model):
                 FROM technical_extra te
                 JOIN maintenance_request mr
                     ON mr.id = te.maintenance_request_id
-                LEFT JOIN historical_report_line_match report_match
+                LEFT JOIN historical_resolved_line_match report_match
                     ON report_match.maintenance_request_id = te.maintenance_request_id
                 LEFT JOIN account_move legacy
                     ON legacy.id = te.legacy_invoice_move_id

@@ -18,3 +18,5 @@ Reporte de rendimiento por mantenimiento para Odoo 17.
 - Servicios manuales usan el cargo registrado, impuestos actuales del producto y conversión a moneda compañía como fallback.
 - Utilidad bruta = venta facturada en moneda compañía - costo bruto del mantenimiento.
 - Para trazabilidad histórica, `legacy_invoice_move_id` se considera únicamente un guard de migración y no la llave principal. El reporte busca primero el `technical_report_number` en todas las facturas `posted` de cargos de la misma liquidación; esto permite distinguir correctamente varios informes/facturas dentro de una sola liquidación. Solo si no existe una coincidencia única recurre al `legacy_invoice_move_id`, placa/producto/cantidad/importe y, finalmente, al último cargo enviado cuando la moneda coincide. Nunca asigna el total completo de una factura compartida a cada mantenimiento.
+
+- v17.0.1.0.4: recuperación histórica 1-a-1 por firma (liquidación/producto/cantidad/monto/moneda) y búsqueda ampliada de facturas históricas con tipo de cargo vacío/legado u origen compuesto.
