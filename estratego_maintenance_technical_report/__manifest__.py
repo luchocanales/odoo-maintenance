@@ -9,7 +9,7 @@
 ##############################################################################
 {
     "name": "Informe Técnico de Mantenimiento",
-    "version": "17.0.1.1.0",
+    "version": "17.0.1.1.1",
     "category": "maintenance",
     "summary": "Formulario de informe técnico y reporte PDF",
     "author": "Estratego Consulting SAC",
