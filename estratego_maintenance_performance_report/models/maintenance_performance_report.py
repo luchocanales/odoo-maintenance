@@ -21,10 +21,10 @@ class MaintenancePerformanceReport(models.Model):
         readonly=True,
     )
     vehicle_id = fields.Many2one("fleet.vehicle", string="Vehículo", readonly=True)
-    license_plate = fields.Char(string="Placa del Vehículo", readonly=True)
-    request_date = fields.Date(string="Fecha de Solicitud de Mantenimiento", readonly=True)
+    license_plate = fields.Char(string="Placa", readonly=True)
+    request_date = fields.Date(string="Fecha", readonly=True)
     technical_report_number = fields.Char(string="Informe Técnico", readonly=True)
-    order_id = fields.Many2one("sale.order", string="Número de Orden Renting asociado", readonly=True)
+    order_id = fields.Many2one("sale.order", string="Liquidación", readonly=True)
     partner_id = fields.Many2one("res.partner", string="Cliente", readonly=True)
 
     billing_status = fields.Selection(
@@ -52,7 +52,7 @@ class MaintenancePerformanceReport(models.Model):
         readonly=True,
     )
     maintenance_cost_company = fields.Monetary(
-        string="Costo del mantenimiento",
+        string="Costo",
         currency_field="company_currency_id",
         readonly=True,
         help="Costo bruto de partes/insumos y servicios, incluyendo impuestos, expresado en moneda compañía.",
