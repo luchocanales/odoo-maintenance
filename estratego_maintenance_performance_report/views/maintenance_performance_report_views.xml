@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_report_maintenance_performance_tree" model="ir.ui.view">
+        <field name="name">report.maintenance.performance.tree</field>
+        <field name="model">report.maintenance.performance</field>
+        <field name="arch" type="xml">
+            <tree string="Reporte de rendimiento por Mantenimiento" create="false" edit="false" delete="false">
+                <field name="company_currency_id" column_invisible="1"/>
+                <field name="maintenance_request_id" optional="hide"/>
+                <field name="license_plate"/>
+                <field name="request_date"/>
+                <field name="technical_report_number"/>
+                <field name="order_id"/>
+                <field name="partner_id"/>
+                <field name="billing_status" widget="badge"
+                       decoration-success="billing_status == 'invoiced'"
+                       decoration-warning="billing_status == 'submitted'"
+                       decoration-muted="billing_status == 'not_submitted'"/>
+                <field name="maintenance_cost_company" sum="Costo Total"/>
+                <field name="billed_currency_id"/>
+                <field name="billed_amount_original" sum="Monto Facturado Original"/>
+                <field name="billed_amount_company" sum="Monto Facturado Compañía"/>
+                <field name="gross_profit" sum="Utilidad Bruta"/>
+                <field name="invoice_id" optional="hide"/>
+                <field name="billing_traceability" optional="hide"/>
+                <field name="technical_charge_last_sent_at" optional="hide"/>
+                <field name="cost_tax_estimated" optional="hide"/>
+                <field name="company_id" optional="hide" groups="base.group_multi_company"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_report_maintenance_performance_search" model="ir.ui.view">
+        <field name="name">report.maintenance.performance.search</field>
+        <field name="model">report.maintenance.performance</field>
+        <field name="arch" type="xml">
+            <search string="Reporte de rendimiento por Mantenimiento">
+                <field name="technical_report_number"/>
+                <field name="license_plate"/>
+                <field name="vehicle_id"/>
+                <field name="order_id"/>
+                <field name="partner_id"/>
+                <field name="invoice_id"/>
+                <separator/>
+                <filter name="status_not_submitted" string="No presentado" domain="[('billing_status', '=', 'not_submitted')]"/>
+                <filter name="status_submitted" string="Presentado" domain="[('billing_status', '=', 'submitted')]"/>
+                <filter name="status_invoiced" string="Facturado" domain="[('billing_status', '=', 'invoiced')]"/>
+                <separator/>
+                <filter name="request_date" string="Fecha de solicitud" date="request_date"/>
+                <separator/>
+                <filter name="group_vehicle" string="Vehículo" context="{'group_by': 'vehicle_id'}"/>
+                <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
+                <filter name="group_status" string="Estado" context="{'group_by': 'billing_status'}"/>
+                <filter name="group_order" string="Orden Renting" context="{'group_by': 'order_id'}"/>
+                <filter name="group_month" string="Mes de solicitud" context="{'group_by': 'request_date:month'}"/>
+                <filter name="group_company" string="Compañía" context="{'group_by': 'company_id'}" groups="base.group_multi_company"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_report_maintenance_performance_pivot" model="ir.ui.view">
+        <field name="name">report.maintenance.performance.pivot</field>
+        <field name="model">report.maintenance.performance</field>
+        <field name="arch" type="xml">
+            <pivot string="Rendimiento por Mantenimiento" disable_linking="false">
+                <field name="partner_id" type="row"/>
+                <field name="billing_status" type="col"/>
+                <field name="maintenance_cost_company" type="measure"/>
+                <field name="billed_amount_company" type="measure"/>
+                <field name="gross_profit" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_report_maintenance_performance_graph" model="ir.ui.view">
+        <field name="name">report.maintenance.performance.graph</field>
+        <field name="model">report.maintenance.performance</field>
+        <field name="arch" type="xml">
+            <graph string="Rendimiento por Mantenimiento" type="bar">
+                <field name="request_date" interval="month"/>
+                <field name="maintenance_cost_company" type="measure"/>
+                <field name="billed_amount_company" type="measure"/>
+                <field name="gross_profit" type="measure"/>
+            </graph>
+        </field>
+    </record>
+
+    <record id="action_report_maintenance_performance" model="ir.actions.act_window">
+        <field name="name">Reporte de rendimiento por Mantenimiento</field>
+        <field name="res_model">report.maintenance.performance</field>
+        <field name="view_mode">tree,pivot,graph</field>
+        <field name="search_view_id" ref="view_report_maintenance_performance_search"/>
+        <field name="context">{}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">No hay mantenimientos para mostrar.</p>
+            <p>El reporte se calcula directamente desde mantenimientos, valorización de inventario, facturas proveedor y facturas cliente.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_report_maintenance_performance"
+              name="Rendimiento por Mantenimiento"
+              parent="maintenance.maintenance_reporting"
+              action="action_report_maintenance_performance"
+              sequence="6"/>
+</odoo>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="rule_report_maintenance_performance_company" model="ir.rule">
+        <field name="name">Rendimiento por Mantenimiento: compañías permitidas</field>
+        <field name="model_id" ref="model_report_maintenance_performance"/>
+        <field name="domain_force">[('company_id', 'in', company_ids)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+    </record>
+</odoo>
