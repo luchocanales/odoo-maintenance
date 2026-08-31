@@ -395,14 +395,118 @@ class MaintenancePerformanceReport(models.Model):
                 WHERE aml.display_type = 'product'
                 GROUP BY aml.move_id
             ),
+            historical_report_line_candidates AS (
+                /*
+                 * Recuperación histórica prioritaria por N° de Informe Técnico.
+                 *
+                 * legacy_invoice_move_id es únicamente un guard de migración: en el
+                 * flujo antiguo varios Extras del mismo período podían terminar
+                 * apuntando a la primera factura del período. Por ello NO debe usarse
+                 * como llave principal del reporte.
+                 *
+                 * Se inspeccionan todas las facturas posted de cargos de la misma
+                 * liquidación y se busca el informe técnico dentro de la etiqueta de
+                 * la línea. La forma histórica generada por el módulo termina en
+                 * "(<technical_report_number>)", que recibe la mayor prioridad.
+                 */
+                SELECT
+                    te.maintenance_request_id,
+                    aml.id AS line_id,
+                    am.id AS move_id,
+                    am.currency_id,
+                    aml.price_total,
+                    aml.price_subtotal,
+                    aml.balance,
+                    (
+                        CASE
+                            WHEN POSITION(
+                                LOWER('(' || BTRIM(mr.technical_report_number) || ')')
+                                IN LOWER(COALESCE(aml.name, ''))
+                            ) > 0 THEN 1000
+                            ELSE 0
+                        END
+                        + CASE
+                            WHEN te.product_id IS NOT NULL
+                             AND aml.product_id = te.product_id
+                            THEN 100 ELSE 0
+                        END
+                        + CASE
+                            WHEN NULLIF(BTRIM(fv.license_plate), '') IS NOT NULL
+                             AND POSITION(
+                                LOWER(BTRIM(fv.license_plate))
+                                IN LOWER(COALESCE(aml.name, ''))
+                             ) > 0
+                            THEN 50 ELSE 0
+                        END
+                    ) AS match_score
+                FROM technical_extra te
+                JOIN maintenance_request mr
+                    ON mr.id = te.maintenance_request_id
+                JOIN sale_order so
+                    ON so.id = mr.order_id
+                LEFT JOIN fleet_vehicle fv
+                    ON fv.id = mr.fleet_vehicle_id
+                JOIN account_move am
+                    ON am.company_id = mr.company_id
+                   AND am.invoice_origin = so.name
+                   AND am.rent_charge_type = 'charge'
+                   AND am.state = 'posted'
+                   AND am.move_type IN ('out_invoice', 'out_receipt')
+                JOIN account_move_line aml
+                    ON aml.move_id = am.id
+                   AND aml.display_type = 'product'
+                WHERE NULLIF(BTRIM(mr.technical_report_number), '') IS NOT NULL
+                  AND (
+                        aml.rental_extra_service_id IS NULL
+                        OR aml.rental_extra_service_id = te.extra_id
+                  )
+                  AND POSITION(
+                        LOWER(BTRIM(mr.technical_report_number))
+                        IN LOWER(COALESCE(aml.name, ''))
+                      ) > 0
+            ),
+            historical_report_best_score AS (
+                SELECT
+                    maintenance_request_id,
+                    MAX(match_score) AS match_score
+                FROM historical_report_line_candidates
+                GROUP BY maintenance_request_id
+            ),
+            historical_report_best_lines AS (
+                SELECT
+                    candidate.*,
+                    COUNT(*) OVER (
+                        PARTITION BY candidate.maintenance_request_id
+                    ) AS best_line_count
+                FROM historical_report_line_candidates candidate
+                JOIN historical_report_best_score best
+                    ON best.maintenance_request_id = candidate.maintenance_request_id
+                   AND best.match_score = candidate.match_score
+            ),
+            historical_report_line_match AS (
+                /*
+                 * Solo se acepta la recuperación cuando el mejor resultado es único.
+                 * Esto evita asignar arbitrariamente una factura si existen dos líneas
+                 * históricas indistinguibles para el mismo informe.
+                 */
+                SELECT
+                    maintenance_request_id,
+                    line_id,
+                    move_id,
+                    currency_id,
+                    price_total,
+                    price_subtotal,
+                    balance
+                FROM historical_report_best_lines
+                WHERE best_line_count = 1
+            ),
             legacy_line_scored AS (
                 /*
-                 * Los históricos anteriores a la trazabilidad línea-a-línea pueden
-                 * conservar únicamente legacy_invoice_move_id. No es correcto tomar
-                 * amount_total de la factura porque una misma factura puede contener
-                 * varios mantenimientos. Se busca por ello UNA línea inequívoca.
+                 * Último fallback para históricos sin coincidencia por informe técnico.
+                 * Aquí sí se inspecciona legacy_invoice_move_id, pero nunca desplaza una
+                 * factura recuperada de forma inequívoca por Informe Técnico.
                  *
-                 * Prioridad de la coincidencia:
+                 * Prioridad de la coincidencia dentro de la factura legacy:
                  *   1) N° de informe técnico dentro de la etiqueta de la línea.
                  *   2) placa + producto.
                  *   3) producto + cantidad + precio unitario histórico.
@@ -471,7 +575,12 @@ class MaintenancePerformanceReport(models.Model):
                    AND aml.display_type = 'product'
                 LEFT JOIN legacy_invoice_line_stats stats
                     ON stats.move_id = am.id
-                WHERE (
+                WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM historical_report_line_match report_match
+                        WHERE report_match.maintenance_request_id = te.maintenance_request_id
+                    )
+                  AND (
                         aml.rental_extra_service_id IS NULL
                         OR aml.rental_extra_service_id = te.extra_id
                     )
@@ -540,26 +649,55 @@ class MaintenancePerformanceReport(models.Model):
                 WHERE best_line_count = 1
             ),
             legacy_posted_billing AS (
+                /*
+                 * Resuelve la factura histórica con esta prioridad:
+                 *   1) línea encontrada por Informe Técnico en TODAS las facturas
+                 *      posted de cargos de la liquidación;
+                 *   2) línea inequívoca dentro de legacy_invoice_move_id;
+                 *   3) legacy_invoice_move_id como guard, usando el último importe
+                 *      enviado solo si la moneda coincide.
+                 *
+                 * Esto corrige liquidaciones con varios informes/facturas donde el
+                 * guard legacy terminó apuntando a la misma factura para varios Extras.
+                 */
                 SELECT
                     te.maintenance_request_id,
-                    legacy.id AS invoice_id,
-                    legacy.currency_id AS billed_currency_id,
+                    resolved.id AS invoice_id,
+                    resolved.currency_id AS billed_currency_id,
                     COALESCE(
+                        report_match.price_total,
                         llm.price_total,
                         CASE
-                            WHEN mr.technical_charge_last_sent_currency_id = legacy.currency_id
+                            WHEN mr.technical_charge_last_sent_currency_id = resolved.currency_id
                              AND ABS(COALESCE(mr.technical_charge_last_sent_amount, 0.0)) > 0.0000001
                             THEN mr.technical_charge_last_sent_amount
                             ELSE NULL
                         END,
                         CASE
-                            WHEN mr.technical_charge_currency_id = legacy.currency_id
+                            WHEN mr.technical_charge_currency_id = resolved.currency_id
                              AND ABS(COALESCE(mr.technical_charge_amount, 0.0)) > 0.0000001
                             THEN mr.technical_charge_amount
                             ELSE NULL
                         END
                     ) AS billed_amount_original,
                     COALESCE(
+                        CASE
+                            WHEN report_match.line_id IS NOT NULL THEN
+                                report_match.price_total
+                                * COALESCE(
+                                    CASE
+                                        WHEN ABS(COALESCE(report_match.price_subtotal, 0.0)) > 0.0000001
+                                        THEN ABS(report_match.balance / report_match.price_subtotal)
+                                        ELSE NULL
+                                    END,
+                                    CASE
+                                        WHEN ABS(COALESCE(resolved.amount_total, 0.0)) > 0.0000001
+                                        THEN ABS(resolved.amount_total_signed / resolved.amount_total)
+                                        ELSE 1.0
+                                    END
+                                )
+                            ELSE NULL
+                        END,
                         CASE
                             WHEN llm.line_id IS NOT NULL THEN
                                 llm.price_total
@@ -570,21 +708,21 @@ class MaintenancePerformanceReport(models.Model):
                                         ELSE NULL
                                     END,
                                     CASE
-                                        WHEN ABS(COALESCE(legacy.amount_total, 0.0)) > 0.0000001
-                                        THEN ABS(legacy.amount_total_signed / legacy.amount_total)
+                                        WHEN ABS(COALESCE(resolved.amount_total, 0.0)) > 0.0000001
+                                        THEN ABS(resolved.amount_total_signed / resolved.amount_total)
                                         ELSE 1.0
                                     END
                                 )
                             ELSE NULL
                         END,
                         CASE
-                            WHEN mr.technical_charge_last_sent_currency_id = legacy.currency_id
+                            WHEN mr.technical_charge_last_sent_currency_id = resolved.currency_id
                              AND ABS(COALESCE(mr.technical_charge_last_sent_amount, 0.0)) > 0.0000001
                             THEN mr.technical_charge_last_sent_amount
                                  * COALESCE(
                                     CASE
-                                        WHEN ABS(COALESCE(legacy.amount_total, 0.0)) > 0.0000001
-                                        THEN ABS(legacy.amount_total_signed / legacy.amount_total)
+                                        WHEN ABS(COALESCE(resolved.amount_total, 0.0)) > 0.0000001
+                                        THEN ABS(resolved.amount_total_signed / resolved.amount_total)
                                         ELSE 1.0
                                     END,
                                     1.0
@@ -592,13 +730,13 @@ class MaintenancePerformanceReport(models.Model):
                             ELSE NULL
                         END,
                         CASE
-                            WHEN mr.technical_charge_currency_id = legacy.currency_id
+                            WHEN mr.technical_charge_currency_id = resolved.currency_id
                              AND ABS(COALESCE(mr.technical_charge_amount, 0.0)) > 0.0000001
                             THEN mr.technical_charge_amount
                                  * COALESCE(
                                     CASE
-                                        WHEN ABS(COALESCE(legacy.amount_total, 0.0)) > 0.0000001
-                                        THEN ABS(legacy.amount_total_signed / legacy.amount_total)
+                                        WHEN ABS(COALESCE(resolved.amount_total, 0.0)) > 0.0000001
+                                        THEN ABS(resolved.amount_total_signed / resolved.amount_total)
                                         ELSE 1.0
                                     END,
                                     1.0
@@ -606,16 +744,26 @@ class MaintenancePerformanceReport(models.Model):
                             ELSE NULL
                         END
                     ) AS billed_amount_company,
-                    (llm.line_id IS NOT NULL) AS amount_recovered_from_line
+                    (
+                        report_match.line_id IS NOT NULL
+                        OR llm.line_id IS NOT NULL
+                    ) AS amount_recovered_from_line,
+                    (report_match.line_id IS NOT NULL) AS invoice_recovered_by_report
                 FROM technical_extra te
                 JOIN maintenance_request mr
                     ON mr.id = te.maintenance_request_id
-                JOIN account_move legacy
+                LEFT JOIN historical_report_line_match report_match
+                    ON report_match.maintenance_request_id = te.maintenance_request_id
+                LEFT JOIN account_move legacy
                     ON legacy.id = te.legacy_invoice_move_id
                    AND legacy.state = 'posted'
                    AND legacy.move_type IN ('out_invoice', 'out_receipt')
                 LEFT JOIN legacy_line_match llm
                     ON llm.maintenance_request_id = te.maintenance_request_id
+                JOIN account_move resolved
+                    ON resolved.id = COALESCE(report_match.move_id, legacy.id)
+                   AND resolved.state = 'posted'
+                   AND resolved.move_type IN ('out_invoice', 'out_receipt')
             )
             SELECT
                 mr.id AS id,
@@ -630,18 +778,16 @@ class MaintenancePerformanceReport(models.Model):
                 so.partner_id AS partner_id,
                 CASE
                     WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN 'invoiced'
-                    WHEN legacy.id IS NOT NULL
-                     AND legacy.state = 'posted'
-                     AND legacy.move_type IN ('out_invoice', 'out_receipt') THEN 'invoiced'
+                    WHEN lpb.invoice_id IS NOT NULL THEN 'invoiced'
                     WHEN mr.technical_charge_last_sent_at IS NOT NULL THEN 'submitted'
                     ELSE 'not_submitted'
                 END AS billing_status,
                 CASE
                     WHEN aei.invoice_id IS NOT NULL OR COALESCE(epb.has_posted_invoice, FALSE) THEN 'exact'
-                    WHEN legacy.id IS NOT NULL THEN 'legacy'
+                    WHEN lpb.invoice_id IS NOT NULL OR legacy.id IS NOT NULL THEN 'legacy'
                     ELSE 'none'
                 END AS billing_traceability,
-                COALESCE(epb.invoice_id, aei.invoice_id, legacy.id) AS invoice_id,
+                COALESCE(epb.invoice_id, aei.invoice_id, lpb.invoice_id, legacy.id) AS invoice_id,
                 CASE
                     WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_currency_id
                     WHEN lpb.invoice_id IS NOT NULL THEN lpb.billed_currency_id
