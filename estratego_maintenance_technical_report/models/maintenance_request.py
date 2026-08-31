@@ -67,6 +67,30 @@ class MaintenanceRequest(models.Model):
         tracking=True,
         default=0.0,
     )
+    technical_charge_last_sent_amount = fields.Monetary(
+        string="Último monto enviado",
+        currency_field="technical_charge_last_sent_currency_id",
+        readonly=True,
+        copy=False,
+        default=0.0,
+    )
+    technical_charge_last_sent_currency_id = fields.Many2one(
+        'res.currency',
+        string="Moneda del último envío",
+        readonly=True,
+        copy=False,
+    )
+    technical_charge_last_sent_at = fields.Datetime(
+        string="Último envío a facturación",
+        readonly=True,
+        copy=False,
+    )
+    technical_charge_last_sent_user_id = fields.Many2one(
+        'res.users',
+        string="Usuario del último envío",
+        readonly=True,
+        copy=False,
+    )
 
     technical_cost_table = fields.Html(string="Tabla de Costos", sanitize=False)
 
@@ -149,38 +173,37 @@ class MaintenanceRequest(models.Model):
         for vals in vals_list:
             if not vals.get("technical_report_number") or vals.get("technical_report_number") == "/":
                 vals["technical_report_number"] = seq.next_by_code("maintenance.technical.report") or "/"
-
-        records = super().create(vals_list)
-
-        # Si ya nace con monto/moneda, sincroniza
-        records._sync_charge_to_extra_service_ids(trigger_fields={"create"})
-        return records
+        # El monto técnico ya NO se sincroniza automáticamente.
+        return super().create(vals_list)
 
     def write(self, vals):
-        # Dispara sync si cambia monto/moneda o correlativo (porque description depende del correlativo)
-        sync_fields = {"technical_charge_amount", "technical_charge_currency_id", "technical_report_number"}
-        must_sync = bool(sync_fields.intersection(vals.keys()))
+        # Una vez enviado el cargo, la SO/vehículo/línea de alquiler se congelan para
+        # no mover el Extra técnico a otro contrato.
+        protected_link_fields = {'order_id', 'fleet_vehicle_id', 'vehicle_rental_line_id'}
+        if protected_link_fields.intersection(vals) and not self.env.context.get('allow_technical_charge_link_change'):
+            for rec in self.filtered('technical_charge_last_sent_at'):
+                for field_name in protected_link_fields.intersection(vals):
+                    current_id = rec[field_name].id if rec[field_name] else False
+                    new_id = vals.get(field_name) or False
+                    if current_id != new_id:
+                        raise ValidationError(_(
+                            "No se puede cambiar la orden, el vehículo ni la línea de alquiler "
+                            "después de haber enviado el cargo técnico a facturación."
+                        ))
 
         res = super().write(vals)
 
-        # Evitar recursión del correlativo
         if self.env.context.get("skip_tr_seq"):
             return res
 
-        # Backfill correlativo para existentes (si aún está vacío o '/')
+        # Backfill de correlativo para registros históricos. Ya no dispara facturación.
         missing = self.filtered(lambda r: not r.technical_report_number or r.technical_report_number in ("", "/"))
         if missing:
             seq = self.env["ir.sequence"].sudo()
-            for r in missing.sudo():
-                r.with_context(skip_tr_seq=True).write(
-                    {"technical_report_number": seq.next_by_code("maintenance.technical.report") or "N*PENDIENTE"}
-                )
-            must_sync = True  # description del extra depende del correlativo
-
-        # Sync cargo -> vehicle.rental.extra.service
-        if must_sync and not self.env.context.get("skip_tr_charge_sync"):
-            self._sync_charge_to_extra_service_ids(trigger_fields=set(vals.keys()))
-
+            for rec in missing.sudo():
+                rec.with_context(skip_tr_seq=True).write({
+                    "technical_report_number": seq.next_by_code("maintenance.technical.report") or "N*PENDIENTE"
+                })
         return res
 
 
@@ -220,99 +243,180 @@ class MaintenanceRequest(models.Model):
     # ---------------------------
     # Sync con vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
     # ---------------------------
-    def _sync_charge_to_extra_service_ids(self, trigger_fields=None):
-        """
-        Crea/actualiza un registro en vehicle.rental.line.extra_service_ids (vehicle.rental.extra.service)
-        relacionado a este informe (maintenance_request_id), con:
-          - line.service_currency_id = technical_charge_currency_id
-          - extra.amount = technical_charge_amount
-          - extra.description = technical_report_number
-          - extra.product_id = producto 'Cargo por Daños y Desgaste'
-          - extra.extra_date = hoy (required)
-          - extra.product_qty = 1 (required)
-        """
-        trigger_fields = trigger_fields or set()
+    def _sync_charge_to_extra_service_ids(self):
+        """Crea o reemplaza el único Extra Operaciones asociado al informe.
 
-        # Si no existe el modelo de rental, salir sin romper
+        Esta rutina ya no se invoca desde ``create``/``write``: únicamente desde el
+        botón ``Enviar a facturación``. En reemplazos conserva ``extra_date`` original.
+        """
+        self.ensure_one()
         if "vehicle.rental.line" not in self.env or "vehicle.rental.extra.service" not in self.env:
-            return
+            raise ValidationError(_("El módulo de alquiler de vehículos no está disponible."))
 
         Extra = self.env["vehicle.rental.extra.service"].sudo()
-
-        # ✅ HARD CHECK: ya que decidiste quedarte con herencia, este campo DEBE existir
         if "maintenance_request_id" not in Extra._fields:
             raise ValidationError(_(
-                "Falta el campo 'maintenance_request_id' en 'vehicle.rental.extra.service'.\n"
-                "Esto indica que la herencia no está cargando (revisa __init__.py / __manifest__.py depends / upgrade del módulo)."
+                "Falta el campo 'maintenance_request_id' en 'vehicle.rental.extra.service'. "
+                "Actualiza el módulo Informe Técnico de Mantenimiento."
             ))
 
-        for rec in self:
-            if "vehicle_rental_line_id" not in rec._fields:
-                continue
+        line = self.vehicle_rental_line_id
+        currency = self.technical_charge_currency_id
+        product = self._get_damage_wear_product()
 
-            line = rec.vehicle_rental_line_id
-            if not line:
-                continue
+        extras = Extra.search([
+            ("vehicle_rental_line_id", "=", line.id),
+            ("maintenance_request_id", "=", self.id),
+        ], order='id')
+        if len(extras) > 1:
+            raise ValidationError(_(
+                "Se encontraron varios Extras Operaciones asociados al mismo informe técnico. "
+                "Regulariza los datos antes de volver a enviar a facturación."
+            ))
+        extra = extras[:1]
 
-            currency = rec.technical_charge_currency_id
-            #amount_value = float(rec.technical_charge_amount or 0.0)
+        # La moneda de Extra Operaciones es compartida por la línea de alquiler. No
+        # sobreescribimos otras operaciones silenciosamente.
+        if line.service_currency_id and line.service_currency_id != currency:
+            other_extras = line.extra_service_ids - extra
+            if other_extras:
+                raise ValidationError(_(
+                    "La línea de alquiler ya tiene Extras Operaciones en moneda %s. "
+                    "No es seguro cambiarla automáticamente a %s porque afectaría otros cargos."
+                ) % (line.service_currency_id.display_name, currency.display_name))
 
-            amount_included = float(rec.technical_charge_amount or 0.0)
-            product = rec._get_damage_wear_product()
-            
-            taxes = product.taxes_id
-            # (opcional) filtrar por compañía si aplica
-            taxes = taxes.filtered(lambda t: not t.company_id or t.company_id == rec.company_id)
-            
-            if taxes and amount_included:
-                # FORZAMOS a tratar el monto ingresado como "tax included"
-                res = taxes.with_company(rec.company_id).with_context(force_price_include=True).compute_all(
-                    amount_included,
-                    currency=rec.currency_id,
-                    quantity=1.0,
-                    product=product,
-                    partner=getattr(rec, "partner_id", False),
-                )
-                amount_value = float(res["total_excluded"])
-            else:
-                amount_value = amount_included
+        if currency and line.service_currency_id != currency:
+            line.with_context(skip_tr_charge_sync=True).sudo().write({
+                "service_currency_id": currency.id,
+            })
 
-            description_value = (rec.technical_report_number or "").strip()
-
-            # 1) Setear moneda de servicios (Operaciones) en la línea rental
-            if currency and "service_currency_id" in line._fields:
-                line.with_context(skip_tr_charge_sync=True).sudo().write({"service_currency_id": currency.id})
-
-            # 2) Buscar el extra EXACTO de este informe (sin depender del one2many cache)
-            extra = Extra.search(
-                [
-                    ("vehicle_rental_line_id", "=", line.id),
-                    ("maintenance_request_id", "=", rec.id),
-                ],
-                limit=1,
+        amount_included = float(self.technical_charge_amount or 0.0)
+        taxes = product.taxes_id.filtered(
+            lambda tax: not tax.company_id or tax.company_id == self.company_id
+        )
+        if taxes and amount_included:
+            tax_res = taxes.with_company(self.company_id).with_context(force_price_include=True).compute_all(
+                amount_included,
+                currency=currency,
+                quantity=1.0,
+                product=product,
+                partner=getattr(self, "partner_id", False),
             )
+            amount_value = float(tax_res["total_excluded"])
+        else:
+            amount_value = amount_included
 
-            vals_to_set = {
-                "vehicle_rental_line_id": line.id, 
-                "maintenance_request_id": rec.id,  
-                "extra_date": fields.Date.context_today(rec),  
-                "product_id": product.id,
-                "product_qty": 1.0,
-                "amount": amount_value,
-                "description": description_value,
-            }
+        vals = {
+            "product_id": product.id,
+            "product_qty": 1.0,
+            "amount": amount_value,
+            "description": (self.technical_report_number or "").strip(),
+        }
+        if extra:
+            # Reemplazo: misma línea, misma identidad y MISMA fecha operativa.
+            extra.with_context(skip_tr_charge_sync=True).write(vals)
+        else:
+            vals.update({
+                "vehicle_rental_line_id": line.id,
+                "maintenance_request_id": self.id,
+                "extra_date": fields.Date.context_today(self),
+            })
+            extra = Extra.with_context(skip_tr_charge_sync=True).create(vals)
+        return extra
 
-            if extra:
-                # no actualices vehicle_rental_line_id/maintenance_request_id si ya existe (por orden/seguridad)
-                extra.with_context(skip_tr_charge_sync=True).write({
-                    "extra_date": vals_to_set["extra_date"],
-                    "product_id": vals_to_set["product_id"],
-                    "product_qty": vals_to_set["product_qty"],
-                    "amount": vals_to_set["amount"],
-                    "description": vals_to_set["description"],
-                })
-            else:
-                Extra.with_context(skip_tr_charge_sync=True).create(vals_to_set)
+    def _format_charge_for_message(self, amount, currency):
+        currency = currency or self.env.company.currency_id
+        decimals = currency.decimal_places if currency else 2
+        return "%s %.*f" % (currency.name or currency.symbol or '', decimals, amount or 0.0)
+
+    def action_send_technical_charge_to_invoice(self):
+        self.ensure_one()
+
+        if not self.fleet_vehicle_id:
+            raise ValidationError(_("Selecciona un vehículo antes de enviar el cargo a facturación."))
+        if not self.order_id:
+            raise ValidationError(_("Selecciona una orden de alquiler antes de enviar el cargo a facturación."))
+        if self.order_id.state != 'sale':
+            raise ValidationError(_("La orden de alquiler debe estar confirmada para enviar el cargo a facturación."))
+
+        rental_line = self.env['vehicle.rental.line'].search([
+            ('order_id', '=', self.order_id.id),
+            ('vehicle_id', '=', self.fleet_vehicle_id.id),
+        ], order='id desc', limit=1)
+        if not rental_line:
+            raise ValidationError(_(
+                "El vehículo '%s' no forma parte de la orden '%s'."
+            ) % (self.fleet_vehicle_id.display_name, self.order_id.display_name))
+
+        if self.vehicle_rental_line_id != rental_line:
+            if self.technical_charge_last_sent_at:
+                raise ValidationError(_(
+                    "La línea de alquiler vinculada al mantenimiento ya no coincide con la orden/vehículo del envío anterior."
+                ))
+            self.with_context(allow_technical_charge_link_change=True).write({
+                'vehicle_rental_line_id': rental_line.id,
+            })
+
+        currency = self.technical_charge_currency_id or self.env.company.currency_id
+        if currency.is_zero(self.technical_charge_amount or 0.0) or self.technical_charge_amount < 0:
+            raise ValidationError(_("El monto a cobrar debe ser mayor que cero."))
+
+        Extra = self.env['vehicle.rental.extra.service'].sudo()
+        existing = Extra.search([
+            ('vehicle_rental_line_id', '=', rental_line.id),
+            ('maintenance_request_id', '=', self.id),
+        ], order='id')
+        if len(existing) > 1:
+            raise ValidationError(_(
+                "Se encontraron varios Extras Operaciones asociados al informe técnico. "
+                "Regulariza los datos antes de continuar."
+            ))
+        existing = existing[:1]
+
+        if existing:
+            active_invoice_moves = existing._get_active_invoice_moves()
+            if active_invoice_moves:
+                invoices = ', '.join(active_invoice_moves.mapped('display_name'))
+                raise ValidationError(_(
+                    "No se puede volver a enviar este cargo porque ya está incluido en una factura activa: %s. "
+                    "Esto incluye facturas en borrador y contabilizadas."
+                ) % invoices)
+
+        had_previous_send = bool(self.technical_charge_last_sent_at)
+        previous_amount = self.technical_charge_last_sent_amount
+        previous_currency = self.technical_charge_last_sent_currency_id
+        if had_previous_send:
+            same_currency = previous_currency == currency
+            same_amount = same_currency and currency.compare_amounts(
+                self.technical_charge_amount, previous_amount
+            ) == 0
+            if same_amount:
+                raise ValidationError(_(
+                    "Este monto ya fue enviado a facturación. Solo se permite un nuevo envío "
+                    "cuando el monto o la moneda hayan cambiado y el Extra aún no esté en una factura activa."
+                ))
+
+        self._sync_charge_to_extra_service_ids()
+
+        self.write({
+            'technical_charge_last_sent_amount': self.technical_charge_amount,
+            'technical_charge_last_sent_currency_id': currency.id,
+            'technical_charge_last_sent_at': fields.Datetime.now(),
+            'technical_charge_last_sent_user_id': self.env.user.id,
+        })
+
+        current_label = self._format_charge_for_message(self.technical_charge_amount, currency)
+        if had_previous_send:
+            previous_label = self._format_charge_for_message(previous_amount, previous_currency)
+            body = _(
+                "Cargo técnico reemplazado para facturación: %s → %s."
+            ) % (previous_label, current_label)
+        else:
+            body = _("Cargo técnico enviado a facturación: %s.") % current_label
+
+        # Texto plano deliberadamente: no introducir etiquetas HTML en el chatter.
+        self.message_post(body=body, subtype_xmlid='mail.mt_note')
+        return True
 
     # ---------------------------
     # Acción reporte

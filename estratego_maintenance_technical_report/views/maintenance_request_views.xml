@@ -72,6 +72,12 @@
                         <group col="4">
                             <field name="technical_charge_currency_id" options="{'no_create': True}"/>
                             <field name="technical_charge_amount" widget="monetary"/>
+                            <button name="action_send_technical_charge_to_invoice"
+                                    type="object"
+                                    string="Enviar a facturación"
+                                    class="oe_highlight"
+                                    icon="fa-paper-plane"
+                                    invisible="technical_charge_amount &lt;= 0"/>
                         </group>
 
                     <separator string="Tabla de Costos"/>
