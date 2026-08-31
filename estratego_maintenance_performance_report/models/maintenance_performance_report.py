@@ -58,19 +58,19 @@ class MaintenancePerformanceReport(models.Model):
         help="Costo bruto de partes/insumos y servicios, incluyendo impuestos, expresado en moneda compañía.",
     )
     billed_amount_original = fields.Monetary(
-        string="Monto facturado (moneda original)",
+        string="Facturado (original)",
         currency_field="billed_currency_id",
         readonly=True,
         help="Venta neta de notas de crédito, con impuestos, en la moneda de la factura.",
     )
     billed_amount_company = fields.Monetary(
-        string="Monto facturado (moneda compañía)",
+        string="Facturado (soles)",
         currency_field="company_currency_id",
         readonly=True,
         help="Venta neta de notas de crédito, con impuestos, convertida a moneda compañía con la tasa contable de cada documento.",
     )
     gross_profit = fields.Monetary(
-        string="Utilidad bruta",
+        string="Utilidad bruta (soles)",
         currency_field="company_currency_id",
         readonly=True,
         help="Monto facturado en moneda compañía menos costo bruto del mantenimiento.",

@@ -46,13 +46,13 @@
                 <filter name="status_submitted" string="Presentado" domain="[('billing_status', '=', 'submitted')]"/>
                 <filter name="status_invoiced" string="Facturado" domain="[('billing_status', '=', 'invoiced')]"/>
                 <separator/>
-                <filter name="request_date" string="Fecha de solicitud" date="request_date"/>
+                <filter name="request_date" string="Fecha" date="request_date"/>
                 <separator/>
                 <filter name="group_vehicle" string="Vehículo" context="{'group_by': 'vehicle_id'}"/>
                 <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
                 <filter name="group_status" string="Estado" context="{'group_by': 'billing_status'}"/>
-                <filter name="group_order" string="Orden Renting" context="{'group_by': 'order_id'}"/>
-                <filter name="group_month" string="Mes de solicitud" context="{'group_by': 'request_date:month'}"/>
+                <filter name="group_order" string="Liquidación" context="{'group_by': 'order_id'}"/>
+                <filter name="group_month" string="Mes" context="{'group_by': 'request_date:month'}"/>
                 <filter name="group_company" string="Compañía" context="{'group_by': 'company_id'}" groups="base.group_multi_company"/>
             </search>
         </field>
