@@ -28,7 +28,7 @@ class MaintenancePerformanceReport(models.Model):
             ("corrective", "Correctivo"),
             ("preventive", "Preventivo"),
         ],
-        string="Tipo de Mantenimiento",
+        string="Tipo",
         readonly=True,
     )
     technical_report_number = fields.Char(string="Informe Técnico", readonly=True)
@@ -72,13 +72,13 @@ class MaintenancePerformanceReport(models.Model):
         help="Venta neta de notas de crédito, con impuestos, en la moneda de la factura.",
     )
     billed_amount_company = fields.Monetary(
-        string="Facturado (soles)",
+        string="Facturado",
         currency_field="company_currency_id",
         readonly=True,
         help="Venta neta de notas de crédito, con impuestos, convertida a moneda compañía con la tasa contable de cada documento.",
     )
     gross_profit = fields.Monetary(
-        string="Utilidad bruta (soles)",
+        string="Utilidad bruta",
         currency_field="company_currency_id",
         readonly=True,
         help="Monto facturado en moneda compañía menos costo bruto del mantenimiento.",
