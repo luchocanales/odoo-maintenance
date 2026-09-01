@@ -23,6 +23,14 @@ class MaintenancePerformanceReport(models.Model):
     vehicle_id = fields.Many2one("fleet.vehicle", string="Vehículo", readonly=True)
     license_plate = fields.Char(string="Placa", readonly=True)
     request_date = fields.Date(string="Fecha", readonly=True)
+    maintenance_type = fields.Selection(
+        [
+            ("corrective", "Correctivo"),
+            ("preventive", "Preventivo"),
+        ],
+        string="Tipo de Mantenimiento",
+        readonly=True,
+    )
     technical_report_number = fields.Char(string="Informe Técnico", readonly=True)
     order_id = fields.Many2one("sale.order", string="Liquidación", readonly=True)
     partner_id = fields.Many2one("res.partner", string="Cliente", readonly=True)
@@ -989,6 +997,7 @@ class MaintenancePerformanceReport(models.Model):
                 mr.fleet_vehicle_id AS vehicle_id,
                 fv.license_plate AS license_plate,
                 mr.request_date AS request_date,
+                mr.maintenance_type AS maintenance_type,
                 mr.technical_report_number AS technical_report_number,
                 mr.order_id AS order_id,
                 so.partner_id AS partner_id,

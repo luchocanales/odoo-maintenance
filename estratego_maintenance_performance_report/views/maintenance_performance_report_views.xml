@@ -9,6 +9,7 @@
                 <field name="maintenance_request_id" optional="hide"/>
                 <field name="license_plate"/>
                 <field name="request_date"/>
+                <field name="maintenance_type"/>
                 <field name="technical_report_number"/>
                 <field name="order_id"/>
                 <field name="partner_id"/>
@@ -38,6 +39,7 @@
                 <field name="technical_report_number"/>
                 <field name="license_plate"/>
                 <field name="vehicle_id"/>
+                <field name="maintenance_type"/>
                 <field name="order_id"/>
                 <field name="partner_id"/>
                 <field name="invoice_id"/>
@@ -49,6 +51,7 @@
                 <filter name="request_date" string="Fecha" date="request_date"/>
                 <separator/>
                 <filter name="group_vehicle" string="Vehículo" context="{'group_by': 'vehicle_id'}"/>
+                <filter name="group_maintenance_type" string="Tipo de Mantenimiento" context="{'group_by': 'maintenance_type'}"/>
                 <filter name="group_partner" string="Cliente" context="{'group_by': 'partner_id'}"/>
                 <filter name="group_status" string="Estado" context="{'group_by': 'billing_status'}"/>
                 <filter name="group_order" string="Liquidación" context="{'group_by': 'order_id'}"/>
@@ -64,6 +67,7 @@
         <field name="arch" type="xml">
             <pivot string="Rendimiento por Mantenimiento" disable_linking="false">
                 <field name="partner_id" type="row"/>
+                <field name="maintenance_type" type="row"/>
                 <field name="billing_status" type="col"/>
                 <field name="maintenance_cost_company" type="measure"/>
                 <field name="billed_amount_company" type="measure"/>
