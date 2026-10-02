@@ -19,12 +19,10 @@
                        decoration-warning="billing_status == 'submitted'"
                        decoration-muted="billing_status == 'not_submitted'"/>
                 <field name="base_maintenance_cost_company" optional="hide" sum="Costo Partes/Servicios"/>
-                <field name="additional_concept_cost_company" optional="show" sum="Costo Conceptos Adicionales"/>
                 <field name="maintenance_cost_company" sum="Costo Total"/>
-                <field name="billed_currency_id"/>
-                <field name="billed_amount_original" sum="Monto Facturado Original"/>
-                <field name="additional_concept_billed_company" optional="show" sum="Facturado Conceptos Adicionales"/>
-                <field name="billed_amount_company" sum="Monto Facturado Compañía"/>
+                <field name="billed_currency_id" column_invisible="1"/>
+                <field name="billed_amount_original" string="Facturado (original)" sum="Facturado (original)"/>
+                <field name="billed_amount_company" string="Facturado total" sum="Facturado total"/>
                 <field name="gross_profit" sum="Utilidad Bruta"/>
                 <field name="invoice_id" optional="hide"/>
                 <field name="billing_traceability" optional="hide"/>
@@ -75,8 +73,6 @@
                 <field name="maintenance_type" type="row"/>
                 <field name="billing_status" type="col"/>
                 <field name="maintenance_cost_company" type="measure"/>
-                <field name="additional_concept_cost_company" type="measure"/>
-                <field name="additional_concept_billed_company" type="measure"/>
                 <field name="billed_amount_company" type="measure"/>
                 <field name="gross_profit" type="measure"/>
             </pivot>
@@ -90,8 +86,6 @@
             <graph string="Rendimiento por Mantenimiento" type="bar">
                 <field name="request_date" interval="month"/>
                 <field name="maintenance_cost_company" type="measure"/>
-                <field name="additional_concept_cost_company" type="measure"/>
-                <field name="additional_concept_billed_company" type="measure"/>
                 <field name="billed_amount_company" type="measure"/>
                 <field name="gross_profit" type="measure"/>
             </graph>

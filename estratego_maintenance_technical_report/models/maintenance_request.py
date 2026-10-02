@@ -91,6 +91,24 @@ class MaintenanceRequest(models.Model):
         readonly=True,
         copy=False,
     )
+    technical_charge_extra_service_ids = fields.One2many(
+        comodel_name="vehicle.rental.extra.service",
+        inverse_name="maintenance_request_id",
+        string="Extras Operaciones de Partes/Servicios",
+        readonly=True,
+        copy=False,
+    )
+    parts_services_billing_state = fields.Selection(
+        [
+            ("pending", "Pendiente"),
+            ("submitted", "Presentado"),
+            ("in_invoice", "En factura"),
+            ("invoiced", "Facturado"),
+        ],
+        string="Estado",
+        compute="_compute_parts_services_billing_state",
+        readonly=True,
+    )
 
     additional_concept_ids = fields.One2many(
         comodel_name="maintenance.additional.concept",
@@ -124,6 +142,35 @@ class MaintenanceRequest(models.Model):
     # ---------------------------
     # Helpers
     # ---------------------------
+    @api.depends(
+        "technical_charge_last_sent_at",
+        "technical_charge_extra_service_ids.invoice_line_ids.move_id.state",
+        "technical_charge_extra_service_ids.invoice_line_ids.move_id.move_type",
+        "technical_charge_extra_service_ids.legacy_invoice_move_id.state",
+        "technical_charge_extra_service_ids.legacy_invoice_move_id.move_type",
+    )
+    def _compute_parts_services_billing_state(self):
+        """Estado comercial del bloque Partes y Servicios.
+
+        El cobro estándar del mantenimiento se consolida en un único Extra Operaciones;
+        por eso todas las líneas de partes/servicios comparten este mismo estado.
+        """
+        for rec in self:
+            extras = rec.technical_charge_extra_service_ids
+            active_moves = extras._get_active_invoice_moves() if extras else self.env["account.move"]
+            posted_moves = active_moves.filtered(
+                lambda move: move.state == "posted"
+                and move.move_type in ("out_invoice", "out_receipt")
+            )
+            if posted_moves:
+                rec.parts_services_billing_state = "invoiced"
+            elif active_moves:
+                rec.parts_services_billing_state = "in_invoice"
+            elif rec.technical_charge_last_sent_at or extras:
+                rec.parts_services_billing_state = "submitted"
+            else:
+                rec.parts_services_billing_state = "pending"
+
     @api.depends("supervisor_employee_id")
     def _compute_supervisor_public(self):
         Employee = self.env["hr.employee"].sudo()
@@ -221,6 +268,25 @@ class MaintenanceRequest(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
+        # El bloque Partes/Servicios y los Adicionales tienen ciclos de facturación
+        # independientes. Una vez que el cargo consolidado de Partes/Servicios entra
+        # en una factura activa, su monto no puede alterarse, pero esto no bloquea
+        # registrar/modificar/enviar conceptos adicionales todavía no facturados.
+        if "technical_charge_amount" in vals and not self.env.context.get("skip_tr_charge_sync"):
+            for rec in self:
+                company = rec.company_id or self.env.company
+                currency = rec.technical_charge_currency_id or company.currency_id
+                new_amount = vals.get("technical_charge_amount") or 0.0
+                if (
+                    currency.compare_amounts(new_amount, rec.technical_charge_amount or 0.0) != 0
+                    and rec.parts_services_billing_state in ("in_invoice", "invoiced")
+                ):
+                    raise ValidationError(_(
+                        "No se puede modificar el monto de Partes y Servicios porque ya está "
+                        "incluido en una factura activa. Los conceptos de la pestaña Adicionales "
+                        "pueden seguir registrándose y enviándose de forma independiente."
+                    ))
+
         # Después del primer envío se congela la relación comercial y su moneda.
         # Mover el mantenimiento a otro contrato/vehículo rompería la trazabilidad
         # tanto del cargo técnico como de los conceptos adicionales.
@@ -549,3 +615,33 @@ class MaintenanceRequest(models.Model):
         return self.env.ref(
             "estratego_maintenance_technical_report.action_report_maintenance_technical"
         ).report_action(self)
+
+
+class MaintenancePart(models.Model):
+    _inherit = "maintenance.part"
+
+    customer_billing_state = fields.Selection(
+        related="maintenance_request_id.parts_services_billing_state",
+        string="Estado",
+        readonly=True,
+        store=False,
+        help=(
+            "Estado de facturación al cliente del bloque consolidado Partes y Servicios "
+            "del mantenimiento."
+        ),
+    )
+
+
+class MaintenanceService(models.Model):
+    _inherit = "maintenance.service"
+
+    customer_billing_state = fields.Selection(
+        related="maintenance_request_id.parts_services_billing_state",
+        string="Estado",
+        readonly=True,
+        store=False,
+        help=(
+            "Estado de facturación al cliente del bloque consolidado Partes y Servicios "
+            "del mantenimiento."
+        ),
+    )

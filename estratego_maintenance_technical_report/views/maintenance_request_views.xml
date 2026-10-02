@@ -24,6 +24,10 @@
                 />
             </xpath>
 
+            <xpath expr="//page[.//field[@name='instruction_type']]" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </xpath>
+
             <xpath expr="//sheet/notebook" position="inside">
                 <page string="Informe Técnico">
                     <group>
@@ -86,7 +90,16 @@
                     <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
                 </page>
 
-                <page string="Costos / Venta adicionales">
+            </xpath>
+        </field>
+    </record>
+    <record id="maintenance_request_form_additional_concepts_inherit" model="ir.ui.view">
+        <field name="name">maintenance.request.form.additional.concepts.inherit</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="estratego_fleet_vehicle_rental.estratego_maintenance_request_inherit_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='used_parts_and_services']" position="after">
+                <page name="additional_cost_sale" string="Adicionales">
                     <div class="alert alert-info" role="alert">
                         Registra aquí cada concepto calculado externamente. Al usar
                         <strong>Enviar a facturación</strong>, el sistema genera el costo analítico
@@ -142,8 +155,28 @@
                     </field>
                 </page>
             </xpath>
+
+            <xpath expr="//page[@name='used_parts_and_services']//field[@name='maintenance_part_ids']/tree/field[@name='actual_cost']" position="after">
+                <field name="customer_billing_state" widget="badge" optional="show"
+                       decoration-success="customer_billing_state == 'invoiced'"
+                       decoration-info="customer_billing_state in ('submitted', 'in_invoice')"
+                       decoration-muted="customer_billing_state == 'pending'"/>
+            </xpath>
+            <xpath expr="//page[@name='used_parts_and_services']//field[@name='maintenance_part_ids']/form//field[@name='actual_cost']" position="after">
+                <field name="customer_billing_state" widget="badge" readonly="1"/>
+            </xpath>
+            <xpath expr="//page[@name='used_parts_and_services']//field[@name='maintenance_service_ids']/tree/field[@name='actual_service_cost']" position="after">
+                <field name="customer_billing_state" widget="badge" optional="show"
+                       decoration-success="customer_billing_state == 'invoiced'"
+                       decoration-info="customer_billing_state in ('submitted', 'in_invoice')"
+                       decoration-muted="customer_billing_state == 'pending'"/>
+            </xpath>
+            <xpath expr="//page[@name='used_parts_and_services']//field[@name='maintenance_service_ids']/form//field[@name='actual_service_cost']" position="after">
+                <field name="customer_billing_state" widget="badge" readonly="1"/>
+            </xpath>
         </field>
     </record>
+
     <record id="maintenance_request_form_additional_cost_total_inherit" model="ir.ui.view">
         <field name="name">maintenance.request.form.additional.cost.total.inherit</field>
         <field name="model">maintenance.request</field>

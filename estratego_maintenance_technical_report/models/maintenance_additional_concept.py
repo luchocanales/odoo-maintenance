@@ -25,7 +25,7 @@ class MaintenanceAdditionalConcept(models.Model):
     name = fields.Char(string="Concepto", required=True)
     product_id = fields.Many2one(
         comodel_name="product.product",
-        string="Producto de venta",
+        string="Producto",
         required=True,
         domain="[('sale_ok', '=', True), ('detailed_type', '=', 'service')]",
         default=lambda self: self._default_sale_product(),
@@ -52,7 +52,7 @@ class MaintenanceAdditionalConcept(models.Model):
         ),
     )
     sale_amount = fields.Monetary(
-        string="Precio de venta",
+        string="Venta",
         currency_field="currency_id",
         required=True,
         default=0.0,
@@ -140,7 +140,7 @@ class MaintenanceAdditionalConcept(models.Model):
         (
             "maintenance_additional_concept_sale_non_negative",
             "CHECK(sale_amount >= 0)",
-            "El precio de venta del concepto no puede ser negativo.",
+            "La venta del concepto no puede ser negativa.",
         ),
     ]
 
@@ -242,7 +242,7 @@ class MaintenanceAdditionalConcept(models.Model):
         if currency.is_zero(self.cost_amount or 0.0) or self.cost_amount < 0:
             raise ValidationError(_("El costo del concepto '%s' debe ser mayor que cero.") % self.name)
         if currency.is_zero(self.sale_amount or 0.0) or self.sale_amount < 0:
-            raise ValidationError(_("El precio de venta del concepto '%s' debe ser mayor que cero.") % self.name)
+            raise ValidationError(_("La venta del concepto '%s' debe ser mayor que cero.") % self.name)
 
         extra = self._get_existing_extra()
         if self.last_sent_at and extra and self._needs_sync():

@@ -434,10 +434,15 @@ class MaintenancePerformanceReport(models.Model):
             additional_concept_sent AS (
                 SELECT
                     mac.maintenance_request_id,
-                    COUNT(*) AS sent_count,
+                    COUNT(*) FILTER (
+                        WHERE mac.last_sent_at IS NOT NULL
+                    ) AS sent_count,
+                    COUNT(*) FILTER (
+                        WHERE mac.last_sent_at IS NOT NULL
+                           OR COALESCE(mac.sale_amount, 0.0) > 0.0
+                    ) AS billable_count,
                     MAX(mac.last_sent_at) AS last_sent_at
                 FROM maintenance_additional_concept mac
-                WHERE mac.last_sent_at IS NOT NULL
                 GROUP BY mac.maintenance_request_id
             ),
             additional_concept_posted_billing AS (
@@ -1125,12 +1130,22 @@ class MaintenancePerformanceReport(models.Model):
                          END)
                         + COALESCE(acpb.invoiced_concept_count, 0)
                     ) >= (
-                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
-                        + COALESCE(acs.sent_count, 0)
+                        (CASE
+                            WHEN COALESCE(mr.technical_charge_amount, 0.0) > 0.0
+                              OR mr.technical_charge_last_sent_at IS NOT NULL
+                              OR te.extra_id IS NOT NULL
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acs.billable_count, 0)
                     )
                     AND (
-                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
-                        + COALESCE(acs.sent_count, 0)
+                        (CASE
+                            WHEN COALESCE(mr.technical_charge_amount, 0.0) > 0.0
+                              OR mr.technical_charge_last_sent_at IS NOT NULL
+                              OR te.extra_id IS NOT NULL
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acs.billable_count, 0)
                     ) > 0
                     THEN 'invoiced'
                     WHEN (
@@ -1243,12 +1258,22 @@ class MaintenancePerformanceReport(models.Model):
                          END)
                         + COALESCE(acpb.invoiced_concept_count, 0)
                     ) >= (
-                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
-                        + COALESCE(acs.sent_count, 0)
+                        (CASE
+                            WHEN COALESCE(mr.technical_charge_amount, 0.0) > 0.0
+                              OR mr.technical_charge_last_sent_at IS NOT NULL
+                              OR te.extra_id IS NOT NULL
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acs.billable_count, 0)
                     )
                     AND (
-                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
-                        + COALESCE(acs.sent_count, 0)
+                        (CASE
+                            WHEN COALESCE(mr.technical_charge_amount, 0.0) > 0.0
+                              OR mr.technical_charge_last_sent_at IS NOT NULL
+                              OR te.extra_id IS NOT NULL
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acs.billable_count, 0)
                     ) > 0
                     THEN (
                         COALESCE(
