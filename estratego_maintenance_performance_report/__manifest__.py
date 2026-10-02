@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Reporte de Rendimiento por Mantenimiento",
-    "version": "17.0.1.2.0",
+    "version": "17.0.1.2.1",
     "category": "Rental",
     "summary": "Rentabilidad de mantenimientos, cargos técnicos, conceptos adicionales, costos e impuestos",
     "author": "Estratego Consulting SAC",

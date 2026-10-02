@@ -338,10 +338,24 @@ class MaintenancePerformanceReport(models.Model):
             additional_concept_cost AS (
                 SELECT
                     mac.maintenance_request_id,
-                    SUM(GREATEST(0.0, -COALESCE(aal.amount, 0.0))) AS gross_cost_company
+                    SUM(
+                        GREATEST(0.0, -COALESCE(aal.amount, 0.0))
+                        * COALESCE(tax_factor.tax_factor, 1.0)
+                    ) AS gross_cost_company,
+                    BOOL_OR(
+                        COALESCE(tax_factor.has_non_percentage_tax, FALSE)
+                        OR tax_factor.tax_factor IS NULL
+                    ) AS tax_estimated
                 FROM maintenance_additional_concept mac
+                JOIN maintenance_request mr
+                    ON mr.id = mac.maintenance_request_id
                 JOIN account_analytic_line aal
                     ON aal.id = mac.analytic_line_id
+                LEFT JOIN product_product product
+                    ON product.id = COALESCE(mac.last_sent_product_id, mac.product_id)
+                LEFT JOIN product_purchase_tax_factor tax_factor
+                    ON tax_factor.product_tmpl_id = product.product_tmpl_id
+                   AND tax_factor.company_id = mr.company_id
                 WHERE mac.last_sent_at IS NOT NULL
                 GROUP BY mac.maintenance_request_id
             ),
@@ -355,7 +369,8 @@ class MaintenancePerformanceReport(models.Model):
                     + COALESCE(sc.gross_cost_company, 0.0)
                     + COALESCE(acc.gross_cost_company, 0.0) AS gross_cost_company,
                     COALESCE(pc.tax_estimated, FALSE)
-                    OR COALESCE(sc.tax_estimated, FALSE) AS tax_estimated
+                    OR COALESCE(sc.tax_estimated, FALSE)
+                    OR COALESCE(acc.tax_estimated, FALSE) AS tax_estimated
                 FROM maintenance_request mr
                 LEFT JOIN part_cost pc ON pc.maintenance_request_id = mr.id
                 LEFT JOIN service_cost sc ON sc.maintenance_request_id = mr.id
