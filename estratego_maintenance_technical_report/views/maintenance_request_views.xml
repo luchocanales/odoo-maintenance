@@ -6,6 +6,16 @@
         <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
         <field name="arch" type="xml">
 
+            <!--
+                Campo técnico requerido por el modifier del botón de envío.
+                La pestaña Adicionales se incorpora mediante otra vista heredada,
+                por lo que Odoo necesita que el campo también exista en esta
+                arquitectura al momento de validarla.
+            -->
+            <xpath expr="//sheet" position="inside">
+                <field name="additional_concept_ids" invisible="1"/>
+            </xpath>
+
             <xpath expr="//header" position="inside">
                 <button
                     name="action_print_technical_report"
