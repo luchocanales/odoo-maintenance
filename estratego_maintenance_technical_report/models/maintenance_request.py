@@ -92,6 +92,20 @@ class MaintenanceRequest(models.Model):
         copy=False,
     )
 
+    additional_concept_ids = fields.One2many(
+        comodel_name="maintenance.additional.concept",
+        inverse_name="maintenance_request_id",
+        string="Conceptos adicionales",
+        copy=True,
+    )
+    total_additional_concept_actual_cost = fields.Monetary(
+        string="Costo Real Conceptos Adicionales",
+        currency_field="currency_id",
+        compute="_compute_actual_costs",
+        readonly=True,
+        help="Suma de los costos adicionales efectivamente enviados y registrados analíticamente.",
+    )
+
     technical_cost_table = fields.Html(string="Tabla de Costos", sanitize=False)
 
     # Cierre
@@ -130,6 +144,36 @@ class MaintenanceRequest(models.Model):
             emp = Employee.browse(rec.responsible_employee_id.id)
             rec.responsible_name = emp.name or False
 
+
+    @api.depends(
+        'maintenance_part_ids.actual_cost',
+        'maintenance_service_ids.actual_service_cost',
+        'sub_total_charge',
+        'additional_concept_ids.last_sent_cost_amount',
+        'additional_concept_ids.last_sent_at',
+    )
+    def _compute_actual_costs(self):
+        # Mantiene el cálculo estándar de partes/servicios y agrega únicamente los
+        # conceptos que ya fueron publicados mediante "Enviar a facturación".
+        super()._compute_actual_costs()
+        for rec in self:
+            additional_actual = sum(
+                line.last_sent_cost_amount
+                for line in rec.additional_concept_ids
+                if line.last_sent_at
+            )
+            rec.total_additional_concept_actual_cost = additional_actual
+            rec.total_actual_cost = (rec.total_actual_cost or 0.0) + additional_actual
+
+            # El concepto adicional nace ya como costo real, no como presupuesto.
+            # Para no deformar la desviación de partes/servicios, se incorpora al
+            # denominador base con el mismo valor que fue enviado.
+            planned_total = (rec.sub_total_charge or 0.0) + additional_actual
+            variance = rec.total_actual_cost - planned_total
+            rec.cost_variance = variance
+            rec.cost_variance_percent = (
+                (variance / planned_total) * 100.0 if planned_total else 0.0
+            )
 
     def _get_schedule_date_str(self):
         self.ensure_one()
@@ -177,18 +221,28 @@ class MaintenanceRequest(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        # Una vez enviado el cargo, la SO/vehículo/línea de alquiler se congelan para
-        # no mover el Extra técnico a otro contrato.
-        protected_link_fields = {'order_id', 'fleet_vehicle_id', 'vehicle_rental_line_id'}
+        # Después del primer envío se congela la relación comercial y su moneda.
+        # Mover el mantenimiento a otro contrato/vehículo rompería la trazabilidad
+        # tanto del cargo técnico como de los conceptos adicionales.
+        protected_link_fields = {
+            'order_id', 'fleet_vehicle_id', 'vehicle_rental_line_id', 'currency_id'
+        }
         if protected_link_fields.intersection(vals) and not self.env.context.get('allow_technical_charge_link_change'):
-            for rec in self.filtered('technical_charge_last_sent_at'):
+            for rec in self:
+                has_sent_financial_data = bool(
+                    rec.technical_charge_last_sent_at
+                    or rec.additional_concept_ids.filtered('last_sent_at')
+                )
+                if not has_sent_financial_data:
+                    continue
                 for field_name in protected_link_fields.intersection(vals):
-                    current_id = rec[field_name].id if rec[field_name] else False
-                    new_id = vals.get(field_name) or False
-                    if current_id != new_id:
+                    current = rec[field_name]
+                    current_value = current.id if getattr(current, 'id', False) else current or False
+                    new_value = vals.get(field_name) or False
+                    if current_value != new_value:
                         raise ValidationError(_(
-                            "No se puede cambiar la orden, el vehículo ni la línea de alquiler "
-                            "después de haber enviado el cargo técnico a facturación."
+                            "No se puede cambiar la orden, el vehículo, la línea de alquiler ni la moneda "
+                            "después de haber enviado información de costo/venta a facturación."
                         ))
 
         res = super().write(vals)
@@ -329,15 +383,14 @@ class MaintenanceRequest(models.Model):
         decimals = currency.decimal_places if currency else 2
         return "%s %.*f" % (currency.name or currency.symbol or '', decimals, amount or 0.0)
 
-    def action_send_technical_charge_to_invoice(self):
+    def _get_rental_line_for_billing(self):
         self.ensure_one()
-
         if not self.fleet_vehicle_id:
-            raise ValidationError(_("Selecciona un vehículo antes de enviar el cargo a facturación."))
+            raise ValidationError(_("Selecciona un vehículo antes de enviar a facturación."))
         if not self.order_id:
-            raise ValidationError(_("Selecciona una orden de alquiler antes de enviar el cargo a facturación."))
+            raise ValidationError(_("Selecciona una orden de alquiler antes de enviar a facturación."))
         if self.order_id.state != 'sale':
-            raise ValidationError(_("La orden de alquiler debe estar confirmada para enviar el cargo a facturación."))
+            raise ValidationError(_("La orden de alquiler debe estar confirmada antes de enviar a facturación."))
 
         rental_line = self.env['vehicle.rental.line'].search([
             ('order_id', '=', self.order_id.id),
@@ -349,20 +402,45 @@ class MaintenanceRequest(models.Model):
             ) % (self.fleet_vehicle_id.display_name, self.order_id.display_name))
 
         if self.vehicle_rental_line_id != rental_line:
-            if self.technical_charge_last_sent_at:
+            has_previous_send = bool(
+                self.technical_charge_last_sent_at
+                or self.additional_concept_ids.filtered('last_sent_at')
+            )
+            if has_previous_send:
                 raise ValidationError(_(
-                    "La línea de alquiler vinculada al mantenimiento ya no coincide con la orden/vehículo del envío anterior."
+                    "La línea de alquiler vinculada al mantenimiento ya no coincide con la orden/vehículo "
+                    "usados en un envío anterior."
                 ))
             self.with_context(allow_technical_charge_link_change=True).write({
                 'vehicle_rental_line_id': rental_line.id,
             })
+        return rental_line
 
+    def _technical_charge_needs_sync(self):
+        self.ensure_one()
+        currency = self.technical_charge_currency_id or self.env.company.currency_id
+        amount = self.technical_charge_amount or 0.0
+        if not self.technical_charge_last_sent_at:
+            return not currency.is_zero(amount) and amount > 0.0
+        if currency.is_zero(amount) or amount < 0.0:
+            raise ValidationError(_(
+                "El cargo técnico ya fue enviado anteriormente y no puede dejarse en cero. "
+                "Si debe anularse, regulariza primero el Extra/factura vinculada."
+            ))
+        return not (
+            self.technical_charge_last_sent_currency_id == currency
+            and currency.compare_amounts(amount, self.technical_charge_last_sent_amount) == 0
+        )
+
+    def _validate_technical_charge_resend(self, rental_line):
+        self.ensure_one()
+        if not self._technical_charge_needs_sync():
+            return False
         currency = self.technical_charge_currency_id or self.env.company.currency_id
         if currency.is_zero(self.technical_charge_amount or 0.0) or self.technical_charge_amount < 0:
             raise ValidationError(_("El monto a cobrar debe ser mayor que cero."))
 
-        Extra = self.env['vehicle.rental.extra.service'].sudo()
-        existing = Extra.search([
+        existing = self.env['vehicle.rental.extra.service'].sudo().search([
             ('vehicle_rental_line_id', '=', rental_line.id),
             ('maintenance_request_id', '=', self.id),
         ], order='id')
@@ -372,51 +450,96 @@ class MaintenanceRequest(models.Model):
                 "Regulariza los datos antes de continuar."
             ))
         existing = existing[:1]
-
-        if existing:
+        if self.technical_charge_last_sent_at and existing:
             active_invoice_moves = existing._get_active_invoice_moves()
             if active_invoice_moves:
-                invoices = ', '.join(active_invoice_moves.mapped('display_name'))
                 raise ValidationError(_(
-                    "No se puede volver a enviar este cargo porque ya está incluido en una factura activa: %s. "
-                    "Esto incluye facturas en borrador y contabilizadas."
-                ) % invoices)
+                    "No se puede modificar el cargo técnico porque ya está incluido en una factura activa: %s."
+                ) % ', '.join(active_invoice_moves.mapped('display_name')))
+        return True
 
+    def _send_technical_charge(self):
+        self.ensure_one()
+        currency = self.technical_charge_currency_id or self.env.company.currency_id
         had_previous_send = bool(self.technical_charge_last_sent_at)
         previous_amount = self.technical_charge_last_sent_amount
         previous_currency = self.technical_charge_last_sent_currency_id
-        if had_previous_send:
-            same_currency = previous_currency == currency
-            same_amount = same_currency and currency.compare_amounts(
-                self.technical_charge_amount, previous_amount
-            ) == 0
-            if same_amount:
-                raise ValidationError(_(
-                    "Este monto ya fue enviado a facturación. Solo se permite un nuevo envío "
-                    "cuando el monto o la moneda hayan cambiado y el Extra aún no esté en una factura activa."
-                ))
 
         self._sync_charge_to_extra_service_ids()
-
         self.write({
             'technical_charge_last_sent_amount': self.technical_charge_amount,
             'technical_charge_last_sent_currency_id': currency.id,
             'technical_charge_last_sent_at': fields.Datetime.now(),
             'technical_charge_last_sent_user_id': self.env.user.id,
         })
-
         current_label = self._format_charge_for_message(self.technical_charge_amount, currency)
         if had_previous_send:
             previous_label = self._format_charge_for_message(previous_amount, previous_currency)
-            body = _(
+            return _(
                 "Cargo técnico reemplazado para facturación: %s → %s."
             ) % (previous_label, current_label)
-        else:
-            body = _("Cargo técnico enviado a facturación: %s.") % current_label
+        return _("Cargo técnico enviado a facturación: %s.") % current_label
+
+    def action_send_technical_charge_to_invoice(self):
+        """Publica en una única acción las consecuencias de costo y venta.
+
+        - Cargo técnico: conserva el flujo histórico de Extra Operaciones.
+        - Conceptos adicionales: crea/actualiza un costo analítico y un Extra
+          Operaciones por concepto.
+        - Si una fuente ya está dentro de una factura activa, solo bloquea cuando
+          existe un cambio que intentaría modificar lo previamente facturado.
+        """
+        self.ensure_one()
+        if (self.technical_charge_amount or 0.0) < 0.0:
+            raise ValidationError(_("El monto técnico no puede ser negativo."))
+        if not self.technical_charge_amount and not self.additional_concept_ids:
+            raise ValidationError(_(
+                "No hay un cargo técnico ni conceptos adicionales para enviar."
+            ))
+
+        rental_line = self._get_rental_line_for_billing()
+        technical_needs_sync = self._technical_charge_needs_sync()
+        if technical_needs_sync:
+            self._validate_technical_charge_resend(rental_line)
+
+        concept_changes = self.additional_concept_ids.filtered(lambda line: line._needs_sync())
+        for concept in concept_changes:
+            concept._validate_for_send()
+
+        if not technical_needs_sync and not concept_changes:
+            raise ValidationError(_(
+                "No hay nuevos conceptos ni cambios pendientes de enviar a facturación."
+            ))
+
+        messages = []
+        if technical_needs_sync:
+            messages.append(self._send_technical_charge())
+
+        for concept in concept_changes:
+            was_sent = bool(concept.last_sent_at)
+            if concept._send(rental_line):
+                action = _("actualizado") if was_sent else _("enviado")
+                messages.append(_(
+                    "Concepto '%(concept)s' %(action)s: costo %(cost)s / venta %(sale)s."
+                ) % {
+                    'concept': concept.name,
+                    'action': action,
+                    'cost': self._format_charge_for_message(concept.cost_amount, concept.currency_id),
+                    'sale': self._format_charge_for_message(concept.sale_amount, concept.currency_id),
+                })
 
         # Texto plano deliberadamente: no introducir etiquetas HTML en el chatter.
-        self.message_post(body=body, subtype_xmlid='mail.mt_note')
+        self.message_post(body="\n".join(messages), subtype_xmlid='mail.mt_note')
         return True
+
+    def unlink(self):
+        for rec in self:
+            if rec.additional_concept_ids.filtered('last_sent_at'):
+                raise ValidationError(_(
+                    "No se puede eliminar este mantenimiento porque tiene conceptos adicionales "
+                    "que ya generaron costo analítico y Extra Operaciones."
+                ))
+        return super().unlink()
 
     # ---------------------------
     # Acción reporte

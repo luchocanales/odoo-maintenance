@@ -6,7 +6,6 @@
         <field name="inherit_id" ref="maintenance.hr_equipment_request_view_form"/>
         <field name="arch" type="xml">
 
-            <!-- Botón de impresión en encabezado -->
             <xpath expr="//header" position="inside">
                 <button
                     name="action_print_technical_report"
@@ -21,11 +20,10 @@
                     string="Enviar a facturación"
                     class="oe_highlight"
                     icon="fa-paper-plane"
-                    invisible="technical_charge_amount &lt;= 0"
+                    invisible="technical_charge_amount &lt;= 0 and not additional_concept_ids"
                 />
             </xpath>
 
-            <!-- Página de informe técnico -->
             <xpath expr="//sheet/notebook" position="inside">
                 <page string="Informe Técnico">
                     <group>
@@ -35,10 +33,9 @@
                     </group>
 
                     <separator string="Evaluación"/>
-                        <field name="technical_evaluation_html" widget="html" placeholder="Describa la evaluación técnica..." nolabel="1"/>
+                    <field name="technical_evaluation_html" widget="html" placeholder="Describa la evaluación técnica..." nolabel="1"/>
 
                     <separator string="Sistemas Evaluados"/>
-                    <!-- Compacto: más columnas para usar espacio horizontal -->
                     <group>
                         <field name="eval_engine"/>
                         <field name="eval_steering"/>
@@ -53,44 +50,111 @@
                     </group>
 
                     <separator string="Introducción"/>
-                        <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..." nolabel="1"/>
-                    
+                    <field name="technical_introduction_html" widget="html" placeholder="Ingrese la introducción del informe..." nolabel="1"/>
 
                     <separator string="Evidencias"/>
-                        <field name="technical_evidence_ids" nolabel="1" >
-                            <tree editable="bottom" >
-                                <field name="sequence"/>
-                                <field name="name"/>
-                                <field name="description" widget="text"/>
-                                <field name="image" widget="image" class="oe_avatar"/>
-                            </tree>
-                            <form string="Evidencia">
-                                <sheet>
-                                    <group>
-                                        <field name="sequence"/>
-                                        <field name="name"/>
-                                        <field name="description"/>
-                                        <field name="image" widget="image"/>
-                                    </group>
-                                </sheet>
-                            </form>
-                        </field>
+                    <field name="technical_evidence_ids" nolabel="1">
+                        <tree editable="bottom">
+                            <field name="sequence"/>
+                            <field name="name"/>
+                            <field name="description" widget="text"/>
+                            <field name="image" widget="image" class="oe_avatar"/>
+                        </tree>
+                        <form string="Evidencia">
+                            <sheet>
+                                <group>
+                                    <field name="sequence"/>
+                                    <field name="name"/>
+                                    <field name="description"/>
+                                    <field name="image" widget="image"/>
+                                </group>
+                            </sheet>
+                        </form>
+                    </field>
 
                     <separator string="Monto a cobrar"/>
-                        <group col="4">
-                            <field name="technical_charge_currency_id" options="{'no_create': True}"/>
-                            <field name="technical_charge_amount" widget="monetary"/>
-                        </group>
+                    <group col="4">
+                        <field name="technical_charge_currency_id" options="{'no_create': True}"/>
+                        <field name="technical_charge_amount" widget="monetary"/>
+                    </group>
 
                     <separator string="Tabla de Costos"/>
-                             <field name="technical_cost_table" widget="html" placeholder="Colocar aquí tabla con los costos..."/>
+                    <field name="technical_cost_table" widget="html" placeholder="Colocar aquí tabla con los costos..."/>
 
                     <separator string="Conclusiones"/>
-                            <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
-                            <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
+                    <field name="technical_conclusions_html" widget="html" placeholder="Conclusiones del informe..."/>
+                    <field name="technical_waiting_response_text" placeholder="Mensaje final (opcional)"/>
+                </page>
+
+                <page string="Costos / Venta adicionales">
+                    <div class="alert alert-info" role="alert">
+                        Registra aquí cada concepto calculado externamente. Al usar
+                        <strong>Enviar a facturación</strong>, el sistema genera el costo analítico
+                        del mantenimiento y su Extra Operaciones de venta con trazabilidad 1:1.
+                    </div>
+                    <field name="additional_concept_ids" nolabel="1">
+                        <tree editable="bottom">
+                            <field name="sequence" widget="handle"/>
+                            <field name="concept_date"/>
+                            <field name="name"/>
+                            <field name="product_id" options="{'no_create': True}"/>
+                            <field name="currency_id" column_invisible="1"/>
+                            <field name="cost_amount" sum="Costo"/>
+                            <field name="sale_amount" sum="Venta"/>
+                            <field name="billing_state" widget="badge"
+                                   decoration-success="billing_state == 'invoiced'"
+                                   decoration-info="billing_state == 'sent'"
+                                   decoration-warning="billing_state == 'pending_resend'"
+                                   decoration-muted="billing_state == 'draft'"/>
+                            <field name="last_sent_at" optional="hide"/>
+                            <field name="last_sent_user_id" optional="hide"/>
+                        </tree>
+                        <form string="Concepto adicional">
+                            <sheet>
+                                <group>
+                                    <group>
+                                        <field name="concept_date"/>
+                                        <field name="name"/>
+                                        <field name="product_id" options="{'no_create': True}"/>
+                                    </group>
+                                    <group>
+                                        <field name="currency_id" readonly="1"/>
+                                        <field name="cost_amount"/>
+                                        <field name="sale_amount"/>
+                                        <field name="billing_state" readonly="1"/>
+                                    </group>
+                                </group>
+                                <group string="Trazabilidad" invisible="not last_sent_at">
+                                    <group>
+                                        <field name="last_sent_cost_amount" readonly="1"/>
+                                        <field name="last_sent_sale_amount" readonly="1"/>
+                                        <field name="last_sent_currency_id" readonly="1"/>
+                                    </group>
+                                    <group>
+                                        <field name="analytic_line_id" readonly="1"/>
+                                        <field name="extra_service_id" readonly="1"/>
+                                        <field name="last_sent_at" readonly="1"/>
+                                        <field name="last_sent_user_id" readonly="1"/>
+                                    </group>
+                                </group>
+                            </sheet>
+                        </form>
+                    </field>
                 </page>
             </xpath>
-
         </field>
     </record>
+    <record id="maintenance_request_form_additional_cost_total_inherit" model="ir.ui.view">
+        <field name="name">maintenance.request.form.additional.cost.total.inherit</field>
+        <field name="model">maintenance.request</field>
+        <field name="inherit_id" ref="estratego_fleet_vehicle_rental.estratego_maintenance_request_inherit_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='total_service_actual_cost']" position="after">
+                <br/>
+                Conceptos adicionales:
+                <field name="total_additional_concept_actual_cost"/>
+            </xpath>
+        </field>
+    </record>
+
 </odoo>

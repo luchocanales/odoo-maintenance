@@ -39,6 +39,7 @@ class MaintenancePerformanceReport(models.Model):
         [
             ("not_submitted", "No presentado"),
             ("submitted", "Presentado"),
+            ("partially_invoiced", "Facturado parcial"),
             ("invoiced", "Facturado"),
         ],
         string="Estado",
@@ -49,6 +50,7 @@ class MaintenancePerformanceReport(models.Model):
             ("none", "Sin trazabilidad de factura"),
             ("exact", "Exacta por línea"),
             ("legacy", "Histórica inferida"),
+            ("mixed", "Mixta"),
         ],
         string="Trazabilidad de Facturación",
         readonly=True,
@@ -59,11 +61,23 @@ class MaintenancePerformanceReport(models.Model):
         string="Moneda facturada",
         readonly=True,
     )
-    maintenance_cost_company = fields.Monetary(
-        string="Costo",
+    base_maintenance_cost_company = fields.Monetary(
+        string="Costo partes/servicios",
         currency_field="company_currency_id",
         readonly=True,
-        help="Costo bruto de partes/insumos y servicios, incluyendo impuestos, expresado en moneda compañía.",
+        help="Costo bruto de partes/insumos y servicios del flujo estándar de mantenimiento.",
+    )
+    additional_concept_cost_company = fields.Monetary(
+        string="Costo conceptos adicionales",
+        currency_field="company_currency_id",
+        readonly=True,
+        help="Costos analíticos generados desde los conceptos adicionales enviados a facturación.",
+    )
+    maintenance_cost_company = fields.Monetary(
+        string="Costo total",
+        currency_field="company_currency_id",
+        readonly=True,
+        help="Costo total del mantenimiento: partes/servicios más conceptos adicionales.",
     )
     billed_amount_original = fields.Monetary(
         string="Facturado (original)",
@@ -71,17 +85,23 @@ class MaintenancePerformanceReport(models.Model):
         readonly=True,
         help="Venta neta de notas de crédito, con impuestos, en la moneda de la factura.",
     )
-    billed_amount_company = fields.Monetary(
-        string="Facturado",
+    additional_concept_billed_company = fields.Monetary(
+        string="Facturado conceptos adicionales",
         currency_field="company_currency_id",
         readonly=True,
-        help="Venta neta de notas de crédito, con impuestos, convertida a moneda compañía con la tasa contable de cada documento.",
+        help="Venta facturada correspondiente exclusivamente a los conceptos adicionales del mantenimiento.",
+    )
+    billed_amount_company = fields.Monetary(
+        string="Facturado total",
+        currency_field="company_currency_id",
+        readonly=True,
+        help="Venta total facturada del mantenimiento, incluyendo cargo técnico y conceptos adicionales.",
     )
     gross_profit = fields.Monetary(
         string="Utilidad bruta",
         currency_field="company_currency_id",
         readonly=True,
-        help="Monto facturado en moneda compañía menos costo bruto del mantenimiento.",
+        help="Monto facturado total menos costo total. Solo se informa cuando todos los cargos enviados del mantenimiento están facturados.",
     )
     technical_charge_last_sent_at = fields.Datetime(
         string="Fecha de presentación",
@@ -315,16 +335,31 @@ class MaintenancePerformanceReport(models.Model):
                    AND tax_factor.company_id = mr.company_id
                 GROUP BY ms.maintenance_request_id
             ),
+            additional_concept_cost AS (
+                SELECT
+                    mac.maintenance_request_id,
+                    SUM(GREATEST(0.0, -COALESCE(aal.amount, 0.0))) AS gross_cost_company
+                FROM maintenance_additional_concept mac
+                JOIN account_analytic_line aal
+                    ON aal.id = mac.analytic_line_id
+                WHERE mac.last_sent_at IS NOT NULL
+                GROUP BY mac.maintenance_request_id
+            ),
             total_cost AS (
                 SELECT
                     mr.id AS maintenance_request_id,
                     COALESCE(pc.gross_cost_company, 0.0)
-                    + COALESCE(sc.gross_cost_company, 0.0) AS gross_cost_company,
+                    + COALESCE(sc.gross_cost_company, 0.0) AS base_gross_cost_company,
+                    COALESCE(acc.gross_cost_company, 0.0) AS additional_gross_cost_company,
+                    COALESCE(pc.gross_cost_company, 0.0)
+                    + COALESCE(sc.gross_cost_company, 0.0)
+                    + COALESCE(acc.gross_cost_company, 0.0) AS gross_cost_company,
                     COALESCE(pc.tax_estimated, FALSE)
                     OR COALESCE(sc.tax_estimated, FALSE) AS tax_estimated
                 FROM maintenance_request mr
                 LEFT JOIN part_cost pc ON pc.maintenance_request_id = mr.id
                 LEFT JOIN service_cost sc ON sc.maintenance_request_id = mr.id
+                LEFT JOIN additional_concept_cost acc ON acc.maintenance_request_id = mr.id
             ),
             technical_extra AS (
                 SELECT DISTINCT ON (extra.maintenance_request_id)
@@ -393,6 +428,83 @@ class MaintenancePerformanceReport(models.Model):
                    AND am.state <> 'cancel'
                    AND am.move_type IN ('out_invoice', 'out_receipt')
                 ORDER BY extra.maintenance_request_id,
+                         CASE WHEN am.state = 'posted' THEN 0 ELSE 1 END,
+                         am.id DESC
+            ),
+            additional_concept_sent AS (
+                SELECT
+                    mac.maintenance_request_id,
+                    COUNT(*) AS sent_count,
+                    MAX(mac.last_sent_at) AS last_sent_at
+                FROM maintenance_additional_concept mac
+                WHERE mac.last_sent_at IS NOT NULL
+                GROUP BY mac.maintenance_request_id
+            ),
+            additional_concept_posted_billing AS (
+                SELECT
+                    mac.maintenance_request_id,
+                    MIN(am.id) FILTER (
+                        WHERE am.move_type IN ('out_invoice', 'out_receipt')
+                    ) AS invoice_id,
+                    CASE
+                        WHEN COUNT(DISTINCT am.currency_id) = 1 THEN MIN(am.currency_id)
+                        ELSE NULL
+                    END AS billed_currency_id,
+                    CASE
+                        WHEN COUNT(DISTINCT am.currency_id) = 1 THEN
+                            SUM(
+                                CASE WHEN am.move_type = 'out_refund' THEN -1.0 ELSE 1.0 END
+                                * aml.price_total
+                            )
+                        ELSE NULL
+                    END AS billed_amount_original,
+                    SUM(
+                        CASE WHEN am.move_type = 'out_refund' THEN -1.0 ELSE 1.0 END
+                        * aml.price_total
+                        * COALESCE(
+                            CASE
+                                WHEN ABS(COALESCE(aml.price_subtotal, 0.0)) > 0.0000001
+                                THEN ABS(aml.balance / aml.price_subtotal)
+                                ELSE NULL
+                            END,
+                            CASE
+                                WHEN ABS(COALESCE(am.amount_total, 0.0)) > 0.0000001
+                                THEN ABS(am.amount_total_signed / am.amount_total)
+                                ELSE 1.0
+                            END
+                        )
+                    ) AS billed_amount_company,
+                    COUNT(DISTINCT mac.id) FILTER (
+                        WHERE am.move_type IN ('out_invoice', 'out_receipt')
+                    ) AS invoiced_concept_count,
+                    BOOL_OR(am.move_type IN ('out_invoice', 'out_receipt')) AS has_posted_invoice
+                FROM maintenance_additional_concept mac
+                JOIN vehicle_rental_extra_service extra
+                    ON extra.maintenance_additional_concept_id = mac.id
+                JOIN account_move_line aml
+                    ON aml.rental_extra_service_id = extra.id
+                JOIN account_move am
+                    ON am.id = aml.move_id
+                   AND am.state = 'posted'
+                   AND am.move_type IN ('out_invoice', 'out_receipt', 'out_refund')
+                WHERE mac.last_sent_at IS NOT NULL
+                GROUP BY mac.maintenance_request_id
+            ),
+            additional_concept_active_invoice AS (
+                SELECT DISTINCT ON (mac.maintenance_request_id)
+                    mac.maintenance_request_id,
+                    am.id AS invoice_id
+                FROM maintenance_additional_concept mac
+                JOIN vehicle_rental_extra_service extra
+                    ON extra.maintenance_additional_concept_id = mac.id
+                JOIN account_move_line aml
+                    ON aml.rental_extra_service_id = extra.id
+                JOIN account_move am
+                    ON am.id = aml.move_id
+                   AND am.state <> 'cancel'
+                   AND am.move_type IN ('out_invoice', 'out_receipt')
+                WHERE mac.last_sent_at IS NOT NULL
+                ORDER BY mac.maintenance_request_id,
                          CASE WHEN am.state = 'posted' THEN 0 ELSE 1 END,
                          am.id DESC
             ),
@@ -1002,43 +1114,154 @@ class MaintenancePerformanceReport(models.Model):
                 mr.order_id AS order_id,
                 so.partner_id AS partner_id,
                 CASE
-                    WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN 'invoiced'
-                    WHEN lpb.invoice_id IS NOT NULL THEN 'invoiced'
-                    WHEN mr.technical_charge_last_sent_at IS NOT NULL THEN 'submitted'
+                    WHEN (
+                        (CASE
+                            WHEN (mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL)
+                             AND (
+                                COALESCE(epb.has_posted_invoice, FALSE)
+                                OR lpb.invoice_id IS NOT NULL
+                             )
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acpb.invoiced_concept_count, 0)
+                    ) >= (
+                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
+                        + COALESCE(acs.sent_count, 0)
+                    )
+                    AND (
+                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
+                        + COALESCE(acs.sent_count, 0)
+                    ) > 0
+                    THEN 'invoiced'
+                    WHEN (
+                        (CASE
+                            WHEN COALESCE(epb.has_posted_invoice, FALSE) OR lpb.invoice_id IS NOT NULL
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acpb.invoiced_concept_count, 0)
+                    ) > 0
+                    THEN 'partially_invoiced'
+                    WHEN mr.technical_charge_last_sent_at IS NOT NULL
+                      OR te.extra_id IS NOT NULL
+                      OR COALESCE(acs.sent_count, 0) > 0
+                    THEN 'submitted'
                     ELSE 'not_submitted'
                 END AS billing_status,
                 CASE
-                    WHEN aei.invoice_id IS NOT NULL OR COALESCE(epb.has_posted_invoice, FALSE) THEN 'exact'
+                    WHEN (lpb.invoice_id IS NOT NULL OR legacy.id IS NOT NULL)
+                     AND (
+                        COALESCE(acpb.has_posted_invoice, FALSE)
+                        OR acai.invoice_id IS NOT NULL
+                     )
+                    THEN 'mixed'
+                    WHEN aei.invoice_id IS NOT NULL
+                      OR COALESCE(epb.has_posted_invoice, FALSE)
+                      OR COALESCE(acpb.has_posted_invoice, FALSE)
+                      OR acai.invoice_id IS NOT NULL
+                    THEN 'exact'
                     WHEN lpb.invoice_id IS NOT NULL OR legacy.id IS NOT NULL THEN 'legacy'
                     ELSE 'none'
                 END AS billing_traceability,
-                COALESCE(epb.invoice_id, aei.invoice_id, lpb.invoice_id, legacy.id) AS invoice_id,
+                COALESCE(
+                    epb.invoice_id,
+                    acpb.invoice_id,
+                    aei.invoice_id,
+                    acai.invoice_id,
+                    lpb.invoice_id,
+                    legacy.id
+                ) AS invoice_id,
                 CASE
-                    WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_currency_id
-                    WHEN lpb.invoice_id IS NOT NULL THEN lpb.billed_currency_id
+                    WHEN (COALESCE(epb.has_posted_invoice, FALSE) OR lpb.invoice_id IS NOT NULL)
+                     AND COALESCE(acpb.has_posted_invoice, FALSE)
+                    THEN CASE
+                        WHEN COALESCE(
+                                CASE WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_currency_id END,
+                                lpb.billed_currency_id
+                             ) = acpb.billed_currency_id
+                        THEN acpb.billed_currency_id
+                        ELSE NULL
+                    END
+                    WHEN COALESCE(epb.has_posted_invoice, FALSE)
+                    THEN epb.billed_currency_id
+                    WHEN lpb.invoice_id IS NOT NULL
+                    THEN lpb.billed_currency_id
+                    WHEN COALESCE(acpb.has_posted_invoice, FALSE)
+                    THEN acpb.billed_currency_id
                     ELSE NULL
                 END AS billed_currency_id,
+                COALESCE(tc.base_gross_cost_company, 0.0) AS base_maintenance_cost_company,
+                COALESCE(tc.additional_gross_cost_company, 0.0) AS additional_concept_cost_company,
                 COALESCE(tc.gross_cost_company, 0.0) AS maintenance_cost_company,
                 CASE
-                    WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_amount_original
-                    WHEN lpb.invoice_id IS NOT NULL THEN lpb.billed_amount_original
+                    WHEN (COALESCE(epb.has_posted_invoice, FALSE) OR lpb.invoice_id IS NOT NULL)
+                     AND COALESCE(acpb.has_posted_invoice, FALSE)
+                     AND COALESCE(
+                            CASE WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_currency_id END,
+                            lpb.billed_currency_id
+                         ) = acpb.billed_currency_id
+                    THEN COALESCE(
+                            CASE WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_amount_original END,
+                            lpb.billed_amount_original,
+                            0.0
+                         ) + COALESCE(acpb.billed_amount_original, 0.0)
+                    WHEN COALESCE(epb.has_posted_invoice, FALSE)
+                     AND NOT COALESCE(acpb.has_posted_invoice, FALSE)
+                    THEN epb.billed_amount_original
+                    WHEN lpb.invoice_id IS NOT NULL
+                     AND NOT COALESCE(acpb.has_posted_invoice, FALSE)
+                    THEN lpb.billed_amount_original
+                    WHEN COALESCE(acpb.has_posted_invoice, FALSE)
+                     AND NOT (COALESCE(epb.has_posted_invoice, FALSE) OR lpb.invoice_id IS NOT NULL)
+                    THEN acpb.billed_amount_original
                     ELSE NULL
                 END AS billed_amount_original,
                 CASE
-                    WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_amount_company
-                    WHEN lpb.invoice_id IS NOT NULL THEN lpb.billed_amount_company
+                    WHEN COALESCE(acpb.has_posted_invoice, FALSE)
+                    THEN acpb.billed_amount_company
+                    ELSE NULL
+                END AS additional_concept_billed_company,
+                CASE
+                    WHEN COALESCE(epb.has_posted_invoice, FALSE)
+                      OR lpb.invoice_id IS NOT NULL
+                      OR COALESCE(acpb.has_posted_invoice, FALSE)
+                    THEN COALESCE(
+                            CASE WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_amount_company END,
+                            lpb.billed_amount_company,
+                            0.0
+                         ) + COALESCE(acpb.billed_amount_company, 0.0)
                     ELSE NULL
                 END AS billed_amount_company,
                 CASE
-                    WHEN COALESCE(epb.has_posted_invoice, FALSE)
-                     AND epb.billed_amount_company IS NOT NULL
-                    THEN epb.billed_amount_company - COALESCE(tc.gross_cost_company, 0.0)
-                    WHEN lpb.invoice_id IS NOT NULL
-                     AND lpb.billed_amount_company IS NOT NULL
-                    THEN lpb.billed_amount_company - COALESCE(tc.gross_cost_company, 0.0)
+                    WHEN (
+                        (CASE
+                            WHEN (mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL)
+                             AND (
+                                COALESCE(epb.has_posted_invoice, FALSE)
+                                OR lpb.invoice_id IS NOT NULL
+                             )
+                            THEN 1 ELSE 0
+                         END)
+                        + COALESCE(acpb.invoiced_concept_count, 0)
+                    ) >= (
+                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
+                        + COALESCE(acs.sent_count, 0)
+                    )
+                    AND (
+                        (CASE WHEN mr.technical_charge_last_sent_at IS NOT NULL OR te.extra_id IS NOT NULL THEN 1 ELSE 0 END)
+                        + COALESCE(acs.sent_count, 0)
+                    ) > 0
+                    THEN (
+                        COALESCE(
+                            CASE WHEN COALESCE(epb.has_posted_invoice, FALSE) THEN epb.billed_amount_company END,
+                            lpb.billed_amount_company,
+                            0.0
+                        )
+                        + COALESCE(acpb.billed_amount_company, 0.0)
+                        - COALESCE(tc.gross_cost_company, 0.0)
+                    )
                     ELSE NULL
                 END AS gross_profit,
-                mr.technical_charge_last_sent_at,
+                GREATEST(mr.technical_charge_last_sent_at, acs.last_sent_at) AS technical_charge_last_sent_at,
                 COALESCE(tc.tax_estimated, FALSE) AS cost_tax_estimated
             FROM maintenance_request mr
             JOIN res_company rc ON rc.id = mr.company_id
@@ -1048,6 +1271,9 @@ class MaintenancePerformanceReport(models.Model):
             LEFT JOIN technical_extra te ON te.maintenance_request_id = mr.id
             LEFT JOIN exact_posted_billing epb ON epb.maintenance_request_id = mr.id
             LEFT JOIN active_exact_invoice aei ON aei.maintenance_request_id = mr.id
+            LEFT JOIN additional_concept_sent acs ON acs.maintenance_request_id = mr.id
+            LEFT JOIN additional_concept_posted_billing acpb ON acpb.maintenance_request_id = mr.id
+            LEFT JOIN additional_concept_active_invoice acai ON acai.maintenance_request_id = mr.id
             LEFT JOIN account_move legacy ON legacy.id = te.legacy_invoice_move_id
             LEFT JOIN legacy_posted_billing lpb ON lpb.maintenance_request_id = mr.id
         """

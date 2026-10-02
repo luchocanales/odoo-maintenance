@@ -12,6 +12,33 @@ class VehicleRentalExtraService(models.Model):
         index=True,
         ondelete="set null",
     )
+    maintenance_additional_concept_id = fields.Many2one(
+        comodel_name="maintenance.additional.concept",
+        string="Concepto adicional de mantenimiento",
+        index=True,
+        copy=False,
+        ondelete="restrict",
+    )
+
+    _sql_constraints = [
+        (
+            "maintenance_additional_concept_extra_unique",
+            "unique(maintenance_additional_concept_id)",
+            "Un concepto adicional de mantenimiento solo puede generar un Extra Operaciones.",
+        ),
+    ]
+
+    def _is_protected_maintenance_extra(self):
+        self.ensure_one()
+        technical_sent = bool(
+            self.maintenance_request_id
+            and self.maintenance_request_id.technical_charge_last_sent_at
+        )
+        concept_sent = bool(
+            self.maintenance_additional_concept_id
+            and self.maintenance_additional_concept_id.last_sent_at
+        )
+        return technical_sent or concept_sent
 
     def write(self, vals):
         protected = {
@@ -19,26 +46,21 @@ class VehicleRentalExtraService(models.Model):
             'vehicle_rental_line_id',
         }
         if protected.intersection(vals) and not self.env.context.get('skip_tr_charge_sync'):
-            technical_extras = self.filtered(
-                lambda extra: extra.maintenance_request_id
-                and extra.maintenance_request_id.technical_charge_last_sent_at
-            )
-            if technical_extras:
+            protected_extras = self.filtered(lambda extra: extra._is_protected_maintenance_extra())
+            if protected_extras:
                 raise ValidationError(_(
-                    "Los Extras Operaciones originados por un informe técnico no se modifican directamente. "
-                    "Cambia el monto en el mantenimiento y usa 'Enviar a facturación'."
+                    "Los Extras Operaciones originados desde mantenimiento no se modifican directamente. "
+                    "Realiza el cambio en el mantenimiento y usa 'Enviar a facturación'."
                 ))
         return super().write(vals)
 
     def unlink(self):
-        technical_extras = self.filtered(
-            lambda extra: extra.maintenance_request_id
-            and extra.maintenance_request_id.technical_charge_last_sent_at
-        )
-        if technical_extras:
-            raise ValidationError(_(
-                "No se puede eliminar un Extra Operaciones que ya fue enviado desde un informe técnico."
-            ))
+        if not self.env.context.get('skip_tr_charge_sync'):
+            protected_extras = self.filtered(lambda extra: extra._is_protected_maintenance_extra())
+            if protected_extras:
+                raise ValidationError(_(
+                    "No se puede eliminar un Extra Operaciones que ya fue enviado desde mantenimiento."
+                ))
         return super().unlink()
 
 
@@ -51,14 +73,13 @@ class VehicleRentalLine(models.Model):
             for line in self:
                 if line.service_currency_id.id == new_currency_id:
                     continue
-                sent_technical_extras = line.extra_service_ids.filtered(
-                    lambda extra: extra.maintenance_request_id
-                    and extra.maintenance_request_id.technical_charge_last_sent_at
+                sent_maintenance_extras = line.extra_service_ids.filtered(
+                    lambda extra: extra._is_protected_maintenance_extra()
                 )
-                if sent_technical_extras:
+                if sent_maintenance_extras:
                     raise ValidationError(_(
                         "No se puede cambiar la moneda de Extra Operaciones porque la línea contiene "
-                        "un cargo técnico ya enviado a facturación. Realiza el cambio desde el mantenimiento "
-                        "y vuelve a usar 'Enviar a facturación' si aún no existe una factura activa."
+                        "cargos enviados desde mantenimiento. Realiza cualquier corrección desde el "
+                        "mantenimiento y vuelve a usar 'Enviar a facturación' si todavía no existe una factura activa."
                     ))
         return super().write(vals)

@@ -15,11 +15,15 @@
                 <field name="partner_id"/>
                 <field name="billing_status" widget="badge"
                        decoration-success="billing_status == 'invoiced'"
+                       decoration-danger="billing_status == 'partially_invoiced'"
                        decoration-warning="billing_status == 'submitted'"
                        decoration-muted="billing_status == 'not_submitted'"/>
+                <field name="base_maintenance_cost_company" optional="hide" sum="Costo Partes/Servicios"/>
+                <field name="additional_concept_cost_company" optional="show" sum="Costo Conceptos Adicionales"/>
                 <field name="maintenance_cost_company" sum="Costo Total"/>
                 <field name="billed_currency_id"/>
                 <field name="billed_amount_original" sum="Monto Facturado Original"/>
+                <field name="additional_concept_billed_company" optional="show" sum="Facturado Conceptos Adicionales"/>
                 <field name="billed_amount_company" sum="Monto Facturado Compañía"/>
                 <field name="gross_profit" sum="Utilidad Bruta"/>
                 <field name="invoice_id" optional="hide"/>
@@ -46,6 +50,7 @@
                 <separator/>
                 <filter name="status_not_submitted" string="No presentado" domain="[('billing_status', '=', 'not_submitted')]"/>
                 <filter name="status_submitted" string="Presentado" domain="[('billing_status', '=', 'submitted')]"/>
+                <filter name="status_partially_invoiced" string="Facturado parcial" domain="[('billing_status', '=', 'partially_invoiced')]"/>
                 <filter name="status_invoiced" string="Facturado" domain="[('billing_status', '=', 'invoiced')]"/>
                 <separator/>
                 <filter name="request_date" string="Fecha" date="request_date"/>
@@ -70,6 +75,8 @@
                 <field name="maintenance_type" type="row"/>
                 <field name="billing_status" type="col"/>
                 <field name="maintenance_cost_company" type="measure"/>
+                <field name="additional_concept_cost_company" type="measure"/>
+                <field name="additional_concept_billed_company" type="measure"/>
                 <field name="billed_amount_company" type="measure"/>
                 <field name="gross_profit" type="measure"/>
             </pivot>
@@ -83,6 +90,8 @@
             <graph string="Rendimiento por Mantenimiento" type="bar">
                 <field name="request_date" interval="month"/>
                 <field name="maintenance_cost_company" type="measure"/>
+                <field name="additional_concept_cost_company" type="measure"/>
+                <field name="additional_concept_billed_company" type="measure"/>
                 <field name="billed_amount_company" type="measure"/>
                 <field name="gross_profit" type="measure"/>
             </graph>
@@ -97,7 +106,7 @@
         <field name="context">{}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">No hay mantenimientos para mostrar.</p>
-            <p>El reporte se calcula directamente desde mantenimientos, valorización de inventario, facturas proveedor y facturas cliente.</p>
+            <p>El reporte se calcula directamente desde mantenimientos, valorización de inventario, facturas proveedor, costos analíticos adicionales y facturas cliente.</p>
         </field>
     </record>
 

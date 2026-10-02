@@ -9,9 +9,9 @@
 ##############################################################################
 {
     "name": "Informe Técnico de Mantenimiento",
-    "version": "17.0.1.1.1",
+    "version": "17.0.1.2.0",
     "category": "maintenance",
-    "summary": "Formulario de informe técnico y reporte PDF",
+    "summary": "Informe técnico, conceptos adicionales de costo/venta y reporte PDF",
     "author": "Estratego Consulting SAC",
     "license": "LGPL-3",
     "depends": [
