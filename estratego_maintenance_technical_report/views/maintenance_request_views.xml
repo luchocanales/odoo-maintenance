@@ -86,7 +86,7 @@
                         </form>
                     </field>
 
-                    <separator string="Monto a cobrar"/>
+                    <separator string="Monto a cobrar (incluido IGV)"/>
                     <group col="4">
                         <field name="technical_charge_currency_id" options="{'no_create': True}"/>
                         <field name="technical_charge_amount" widget="monetary"/>
