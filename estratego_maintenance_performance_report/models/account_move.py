@@ -12,41 +12,14 @@ class AccountMoveLine(models.Model):
         "move_id",
     )
     def _check_rental_extra_unique_active(self):
-        """Mantiene unicidad en facturas, permitiendo trazabilidad en NC.
-
-        El módulo de alquiler impide que un Extra esté en dos facturas cliente
-        activas. Una nota de crédito no es una segunda facturación: es la reversión
-        de la primera y debe conservar el vínculo para poder calcular venta neta.
         """
-        for line in self:
-            move = line.move_id
-            if not move or move.state == "cancel":
-                continue
+        Conserva la validación del módulo de alquiler.
 
-            # Las NC pueden conservar el vínculo con el Extra de la factura origen.
-            if move.move_type == "out_refund":
-                continue
-
-            if move.move_type not in ("out_invoice", "out_receipt"):
-                continue
-
-            for field_name, label in (
-                ("rental_extra_service_id", _("Extra Operaciones")),
-                ("rental_extra_commercial_service_id", _("Extra Comercial")),
-            ):
-                source = line[field_name]
-                if not source:
-                    continue
-                duplicate = self.sudo().search([
-                    ("id", "!=", line.id),
-                    (field_name, "=", source.id),
-                    ("move_id.state", "!=", "cancel"),
-                    ("move_id.move_type", "in", ("out_invoice", "out_receipt")),
-                ], limit=1)
-                if duplicate:
-                    raise ValidationError(_(
-                        "%s ya está relacionado con otra factura activa: %s."
-                    ) % (label, duplicate.move_id.display_name))
+        Las notas de crédito no representan una segunda
+        facturación. Se permite refacturar únicamente cuando
+        la factura anterior está cancelada o totalmente revertida.
+        """
+        return super()._check_rental_extra_unique_active()
 
 
 class AccountMove(models.Model):
