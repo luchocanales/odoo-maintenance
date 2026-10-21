@@ -146,8 +146,16 @@ class MaintenanceRequest(models.Model):
         "technical_charge_last_sent_at",
         "technical_charge_extra_service_ids.invoice_line_ids.move_id.state",
         "technical_charge_extra_service_ids.invoice_line_ids.move_id.move_type",
+        "technical_charge_extra_service_ids.invoice_line_ids.move_id.payment_state",
+        "technical_charge_extra_service_ids.invoice_line_ids.move_id.amount_total",
+        "technical_charge_extra_service_ids.invoice_line_ids.move_id.reversal_move_id.state",
+        "technical_charge_extra_service_ids.invoice_line_ids.move_id.reversal_move_id.amount_total",
         "technical_charge_extra_service_ids.legacy_invoice_move_id.state",
         "technical_charge_extra_service_ids.legacy_invoice_move_id.move_type",
+        "technical_charge_extra_service_ids.legacy_invoice_move_id.payment_state",
+        "technical_charge_extra_service_ids.legacy_invoice_move_id.amount_total",
+        "technical_charge_extra_service_ids.legacy_invoice_move_id.reversal_move_id.state",
+        "technical_charge_extra_service_ids.legacy_invoice_move_id.reversal_move_id.amount_total",
     )
     def _compute_parts_services_billing_state(self):
         """Estado comercial del bloque Partes y Servicios.
@@ -279,7 +287,7 @@ class MaintenanceRequest(models.Model):
                 new_amount = vals.get("technical_charge_amount") or 0.0
                 if (
                     currency.compare_amounts(new_amount, rec.technical_charge_amount or 0.0) != 0
-                    and rec.parts_services_billing_state in ("in_invoice", "invoiced")
+                    and rec.technical_charge_extra_service_ids._get_active_invoice_moves()
                 ):
                     raise ValidationError(_(
                         "No se puede modificar el monto de Partes y Servicios porque ya está "

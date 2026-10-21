@@ -170,7 +170,15 @@ class MaintenanceAdditionalConcept(models.Model):
         "analytic_line_id",
         "extra_service_id",
         "extra_service_id.invoice_line_ids.move_id.state",
+        "extra_service_id.invoice_line_ids.move_id.payment_state",
+        "extra_service_id.invoice_line_ids.move_id.amount_total",
+        "extra_service_id.invoice_line_ids.move_id.reversal_move_id.state",
+        "extra_service_id.invoice_line_ids.move_id.reversal_move_id.amount_total",
         "extra_service_id.legacy_invoice_move_id.state",
+        "extra_service_id.legacy_invoice_move_id.payment_state",
+        "extra_service_id.legacy_invoice_move_id.amount_total",
+        "extra_service_id.legacy_invoice_move_id.reversal_move_id.state",
+        "extra_service_id.legacy_invoice_move_id.reversal_move_id.amount_total",
     )
     def _compute_billing_state(self):
         for rec in self:
@@ -245,7 +253,8 @@ class MaintenanceAdditionalConcept(models.Model):
             raise ValidationError(_("La venta del concepto '%s' debe ser mayor que cero.") % self.name)
 
         extra = self._get_existing_extra()
-        if self.last_sent_at and extra and self._needs_sync():
+        # Cambios solo de costo analítico no modifican la venta facturada.
+        if self.last_sent_at and extra and self._sale_needs_sync():
             active_moves = extra._get_active_invoice_moves()
             if active_moves:
                 raise ValidationError(_(
@@ -441,6 +450,12 @@ class MaintenanceAdditionalConcept(models.Model):
                         "La fecha del concepto '%s' queda congelada después del primer envío "
                         "para conservar la fecha operativa del costo y del Extra Operaciones."
                     ) % rec.name)
+                # Se permite corregir exclusivamente el costo analítico.
+                # La venta, producto, descripción y origen comercial siguen
+                # protegidos mientras exista facturación efectiva.
+                sale_sensitive = {'maintenance_request_id', 'name', 'product_id', 'sale_amount'}
+                if not sale_sensitive.intersection(vals):
+                    continue
                 active_moves = rec._get_existing_extra()._get_active_invoice_moves()
                 if active_moves:
                     raise ValidationError(_(
