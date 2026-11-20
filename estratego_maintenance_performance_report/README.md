@@ -5,6 +5,7 @@ Reporte de rendimiento por mantenimiento para Odoo 17.
 ## Criterios principales
 
 - Una fila por `maintenance.request`.
+- Fecha del reporte: `schedule_date` convertida desde UTC a la fecha local de `America/Lima`; en ausencia de programación se usa `request_date`.
 - Estado:
   - **No presentado**: nunca enviado a facturación.
   - **Presentado**: enviado, pero sin factura cliente contabilizada.
@@ -14,8 +15,7 @@ Reporte de rendimiento por mantenimiento para Odoo 17.
 - Notas de crédito vinculadas al Extra restan de la venta.
 - Costo de partes desde `stock.valuation.layer`, incluyendo capas descendientes de revalorización.
 - Impuestos de partes desde el factor tributario de la OC; para líneas manuales se usan impuestos de compra actuales del producto como fallback.
-- Servicios provenientes de OC se valorizan desde facturas proveedor `posted`, con impuesto y porcentaje analítico del vehículo.
-- Servicios manuales usan el cargo registrado, impuestos actuales del producto y conversión a moneda compañía como fallback.
+- Servicios: se suman los valores `maintenance.service.actual_service_cost` asociados al mantenimiento, con independencia de la existencia de una OC o factura proveedor. El campo debe estar almacenado y su importe expresado en moneda compañía.
 - Utilidad bruta = venta facturada en moneda compañía - costo bruto del mantenimiento.
 - Conceptos adicionales: el costo analítico se conserva neto; para el reporte se aplica el factor de impuestos de compra del producto del último envío antes de sumarlo al costo bruto total.
 - Para trazabilidad histórica, `legacy_invoice_move_id` se considera únicamente un guard de migración y no la llave principal. El reporte busca primero el `technical_report_number` en todas las facturas `posted` de cargos de la misma liquidación; esto permite distinguir correctamente varios informes/facturas dentro de una sola liquidación. Solo si no existe una coincidencia única recurre al `legacy_invoice_move_id`, placa/producto/cantidad/importe y, finalmente, al último cargo enviado cuando la moneda coincide. Nunca asigna el total completo de una factura compartida a cada mantenimiento.
@@ -23,3 +23,5 @@ Reporte de rendimiento por mantenimiento para Odoo 17.
 - v17.0.1.0.4: recuperación histórica 1-a-1 por firma (liquidación/producto/cantidad/monto/moneda) y búsqueda ampliada de facturas históricas con tipo de cargo vacío/legado u origen compuesto.
 
 - v17.0.1.2.1: corrige el Costo total para incluir impuestos de compra en los conceptos adicionales, usando el producto del último envío para preservar históricos.
+
+- v17.0.1.2.2: utiliza fecha programada local (con fallback) y costo real de servicios (`maintenance.service.actual_service_cost`). Elimina los CTE de costos de facturas proveedor y conversión de moneda ya innecesarios para los servicios.

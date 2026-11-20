@@ -65,7 +65,7 @@ class MaintenancePerformanceReport(models.Model):
         string="Costo partes/servicios",
         currency_field="company_currency_id",
         readonly=True,
-        help="Costo bruto de partes/insumos y servicios del flujo estándar de mantenimiento.",
+        help="Costo de partes/insumos más el costo real de los servicios (actual_service_cost).",
     )
     additional_concept_cost_company = fields.Monetary(
         string="Costo conceptos adicionales",
@@ -77,7 +77,7 @@ class MaintenancePerformanceReport(models.Model):
         string="Costo total",
         currency_field="company_currency_id",
         readonly=True,
-        help="Costo total del mantenimiento: partes/servicios más conceptos adicionales.",
+        help="Costo total del mantenimiento: partes/insumos, costo real de servicios y conceptos adicionales.",
     )
     billed_amount_original = fields.Monetary(
         string="Facturado (original)",
@@ -111,8 +111,8 @@ class MaintenancePerformanceReport(models.Model):
         string="Costo con impuesto estimado",
         readonly=True,
         help=(
-            "Indica que al menos un costo manual tuvo que usar impuestos actuales del producto "
-            "o una conversión de moneda de respaldo, en vez de un documento proveedor contabilizado."
+            "Indica que para partes o conceptos adicionales se estimaron impuestos "
+            "a partir de la configuración actual del producto."
         ),
     )
 
@@ -197,37 +197,6 @@ class MaintenancePerformanceReport(models.Model):
                 FROM product_purchase_tax_leaf
                 GROUP BY product_tmpl_id, company_id
             ),
-            maintenance_currency_rate AS (
-                SELECT
-                    mr.id AS maintenance_request_id,
-                    CASE
-                        WHEN mr.currency_id = rc.currency_id THEN 1.0
-                        ELSE COALESCE((
-                            SELECT r.rate
-                            FROM res_currency_rate r
-                            WHERE r.currency_id = mr.currency_id
-                              AND r.name <= COALESCE(mr.request_date, CURRENT_DATE)
-                              AND (r.company_id IS NULL OR r.company_id = mr.company_id)
-                            ORDER BY
-                                CASE WHEN r.company_id = mr.company_id THEN 0 ELSE 1 END,
-                                r.name DESC,
-                                r.id DESC
-                            LIMIT 1
-                        ), 1.0)
-                    END AS rate_to_company,
-                    CASE
-                        WHEN mr.currency_id = rc.currency_id THEN FALSE
-                        ELSE NOT EXISTS (
-                            SELECT 1
-                            FROM res_currency_rate r
-                            WHERE r.currency_id = mr.currency_id
-                              AND r.name <= COALESCE(mr.request_date, CURRENT_DATE)
-                              AND (r.company_id IS NULL OR r.company_id = mr.company_id)
-                        )
-                    END AS missing_rate
-                FROM maintenance_request mr
-                JOIN res_company rc ON rc.id = mr.company_id
-            ),
             part_cost AS (
                 SELECT
                     mp.maintenance_request_id,
@@ -259,80 +228,16 @@ class MaintenancePerformanceReport(models.Model):
                    AND tax_factor.company_id = mr.company_id
                 GROUP BY mp.maintenance_request_id
             ),
-            service_invoice_cost AS (
-                SELECT
-                    ms.id AS service_id,
-                    ms.maintenance_request_id,
-                    SUM(
-                        aml.balance
-                        * COALESCE(
-                            CASE
-                                WHEN ABS(COALESCE(aml.price_subtotal, 0.0)) > 0.0000001
-                                THEN ABS(aml.price_total / aml.price_subtotal)
-                                ELSE NULL
-                            END,
-                            CASE
-                                WHEN ABS(COALESCE(am.amount_total, 0.0)) > 0.0000001
-                                THEN ABS(am.amount_total_signed / am.amount_total)
-                                ELSE 1.0
-                            END
-                        )
-                        * COALESCE(
-                            (
-                                SELECT SUM((entry.value)::numeric)
-                                FROM jsonb_each_text(COALESCE(aml.analytic_distribution, '{}'::jsonb)) entry
-                                WHERE fv.analytic_account_id IS NOT NULL
-                                  AND fv.analytic_account_id::text = ANY(
-                                      string_to_array(replace(entry.key, ' ', ''), ',')
-                                  )
-                            ),
-                            NULLIF(ms.analytic_percentage, 0.0),
-                            0.0
-                        ) / 100.0
-                    ) AS gross_cost_company
-                FROM maintenance_service ms
-                JOIN maintenance_request mr ON mr.id = ms.maintenance_request_id
-                LEFT JOIN fleet_vehicle fv ON fv.id = mr.fleet_vehicle_id
-                JOIN account_move_line aml
-                    ON aml.purchase_line_id = ms.purchase_order_line_id
-                   AND aml.display_type = 'product'
-                JOIN account_move am
-                    ON am.id = aml.move_id
-                   AND am.state = 'posted'
-                   AND am.move_type IN ('in_invoice', 'in_refund')
-                WHERE ms.purchase_order_line_id IS NOT NULL
-                GROUP BY ms.id, ms.maintenance_request_id
-            ),
             service_cost AS (
+                -- El costo operativo del servicio es el registrado en la línea
+                -- de mantenimiento, independientemente de su OC o factura.
+                -- actual_service_cost debe estar almacenado y expresado en la
+                -- moneda de la compañía (igual que los demás costos del reporte).
                 SELECT
                     ms.maintenance_request_id,
-                    SUM(
-                        CASE
-                            WHEN ms.purchase_order_line_id IS NOT NULL
-                                THEN COALESCE(sic.gross_cost_company, 0.0)
-                            ELSE
-                                COALESCE(ms.service_charge, 0.0)
-                                / NULLIF(COALESCE(mcr.rate_to_company, 1.0), 0.0)
-                                * COALESCE(tax_factor.tax_factor, 1.0)
-                        END
-                    ) AS gross_cost_company,
-                    BOOL_OR(
-                        ms.purchase_order_line_id IS NULL
-                        AND (
-                            COALESCE(tax_factor.has_non_percentage_tax, FALSE)
-                            OR COALESCE(mcr.missing_rate, FALSE)
-                            OR tax_factor.tax_factor IS NULL
-                        )
-                    ) AS tax_estimated
+                    SUM(COALESCE(ms.actual_service_cost, 0.0)) AS gross_cost_company,
+                    FALSE AS tax_estimated
                 FROM maintenance_service ms
-                JOIN maintenance_request mr ON mr.id = ms.maintenance_request_id
-                LEFT JOIN service_invoice_cost sic ON sic.service_id = ms.id
-                LEFT JOIN maintenance_currency_rate mcr
-                    ON mcr.maintenance_request_id = ms.maintenance_request_id
-                LEFT JOIN product_product product ON product.id = ms.product_id
-                LEFT JOIN product_purchase_tax_factor tax_factor
-                    ON tax_factor.product_tmpl_id = product.product_tmpl_id
-                   AND tax_factor.company_id = mr.company_id
                 GROUP BY ms.maintenance_request_id
             ),
             additional_concept_cost AS (
@@ -1128,7 +1033,12 @@ class MaintenancePerformanceReport(models.Model):
                 rc.currency_id AS company_currency_id,
                 mr.fleet_vehicle_id AS vehicle_id,
                 fv.license_plate AS license_plate,
-                mr.request_date AS request_date,
+                -- Datetime Odoo almacenado en UTC; mostrar la fecha local
+                -- del mantenimiento en Perú y conservar un fallback si está vacío.
+                COALESCE(
+                    (mr.schedule_date AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date,
+                    mr.request_date
+                ) AS request_date,
                 mr.maintenance_type AS maintenance_type,
                 mr.technical_report_number AS technical_report_number,
                 mr.order_id AS order_id,
