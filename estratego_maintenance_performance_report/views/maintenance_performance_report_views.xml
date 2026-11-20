@@ -19,7 +19,7 @@
                        decoration-warning="billing_status == 'submitted'"
                        decoration-muted="billing_status == 'not_submitted'"/>
                 <field name="base_maintenance_cost_company" optional="hide" sum="Costo Partes/Servicios"/>
-                <field name="maintenance_cost_company" sum="Costo Total"/>
+                <field name="maintenance_cost_company" widget="monetary" options="{'currency_field': 'company_currency_id', 'hide_trailing_zeros': True}" sum="Costo Total"/>
                 <field name="billed_currency_id" column_invisible="1"/>
                 <field name="billed_amount_original" string="Facturado (original)" sum="Facturado (original)"/>
                 <field name="billed_amount_company" string="Facturado total" sum="Facturado total"/>

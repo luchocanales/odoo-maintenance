@@ -1253,7 +1253,11 @@ class MaintenancePerformanceReport(models.Model):
                 END AS billed_currency_id,
                 COALESCE(tc.base_gross_cost_company, 0.0) AS base_maintenance_cost_company,
                 COALESCE(tc.additional_gross_cost_company, 0.0) AS additional_concept_cost_company,
-                COALESCE(tc.gross_cost_company, 0.0) AS maintenance_cost_company,
+                -- Redondeo comercial del costo TOTAL a unidades monetarias en el reporte.
+                -- La provisión y la facturación siguen con su precisión original,
+                -- igual que el cálculo contable de gross_profit.
+                ROUND(COALESCE(tc.gross_cost_company, 0.0)::numeric, 0)::double precision
+                    AS maintenance_cost_company,
                 CASE
                     WHEN (COALESCE(epb.has_posted_invoice, FALSE) OR lpb.invoice_id IS NOT NULL)
                      AND COALESCE(acpb.has_posted_invoice, FALSE)
