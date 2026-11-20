@@ -67,7 +67,7 @@ class MaintenancePerformanceReport(models.Model):
         string="Costo partes/servicios",
         currency_field="company_currency_id",
         readonly=True,
-        help="Costo de partes/insumos más el costo real de los servicios (actual_service_cost).",
+        help="Costo de partes/insumos más el costo real de servicios con impuestos, calculado según la provisión vigente o la facturación del proveedor.",
     )
     additional_concept_cost_company = fields.Monetary(
         string="Costo conceptos adicionales",
@@ -79,7 +79,7 @@ class MaintenancePerformanceReport(models.Model):
         string="Costo total",
         currency_field="company_currency_id",
         readonly=True,
-        help="Costo total del mantenimiento: partes/insumos, costo real de servicios y conceptos adicionales.",
+        help="Costo total con impuestos del mantenimiento: partes/insumos, servicios y conceptos adicionales.",
     )
     billed_amount_original = fields.Monetary(
         string="Facturado (original)",
@@ -113,18 +113,19 @@ class MaintenancePerformanceReport(models.Model):
         string="Costo con impuesto estimado",
         readonly=True,
         help=(
-            "Indica que para partes o conceptos adicionales se estimaron impuestos "
-            "a partir de la configuración actual del producto."
+            "Indica que algún costo usa un factor de impuestos de respaldo "
+            "(por ejemplo, el de la orden de compra cuando no está disponible el de factura), "
+            "o impuestos de compra actuales del producto."
         ),
     )
 
     @property
     def _table_query(self):
-        # actual_service_cost es un compute NO almacenado en maintenance.service.
-        # Su cálculo utiliza la cuenta analítica del vehículo, que puede estar
-        # en account_id o en x_plan<ID>_id según el plan analítico de Odoo 17.
-        # Construir la condición sobre las columnas realmente instaladas evita
-        # referenciar una columna no existente en maintenance_service.
+        # actual_service_cost es compute NO almacenado en maintenance.service.
+        # estratego_purchase_account_provision lo reemplaza por el costo
+        # congelado si existe conformidad vigente; en su ausencia se usa la
+        # analítica de las facturas proveedor. En Odoo 17 la cuenta del vehículo
+        # puede vivir en account_id o x_plan<ID>_id según su plan analítico.
         analytic_line_fields = self.env["account.analytic.line"]._fields
         analytic_columns = sorted(
             name
@@ -254,19 +255,60 @@ class MaintenancePerformanceReport(models.Model):
                    AND tax_factor.company_id = mr.company_id
                 GROUP BY mp.maintenance_request_id
             ),
-            service_cost AS (
-                -- Equivalente SQL del compute NO almacenado
-                -- maintenance.service._compute_actual_service_cost:
-                --   * solo facturas/notas de crédito proveedor contabilizadas;
-                --   * solo apuntes analíticos de la cuenta del vehículo;
-                --   * gastos negativos y devoluciones positivas.
-                -- account_analytic_line.amount ya está en moneda compañía.
-                -- No usar service_charge, distribución porcentual ni impuestos
-                -- estimados: no forman parte de actual_service_cost.
+            valid_service_provision AS (
+                -- Reflejar maintenance.service._valid_cost_provision().
+                -- El campo provision_company_cost es NETO e imputado al vehículo.
+                -- El factor EXACTO de impuestos proviene de los importes
+                -- congelados de purchase.service.provision, nunca de la tasa
+                -- vigente del producto (podría haber cambiado).
+                -- No se suman las líneas contables de impuestos por separado,
+                -- porque la provisión ya contiene el total con impuestos.
                 SELECT
-                    ms.maintenance_request_id,
-                    SUM(-COALESCE(aal.amount, 0.0)) AS gross_cost_company,
-                    FALSE AS tax_estimated
+                    ms.id AS service_id,
+                    COALESCE(ms.provision_company_cost, 0.0)
+                    * COALESCE(
+                        CASE
+                            WHEN ABS(COALESCE(provision.net_company_amount, 0.0)) > 0.0000001
+                            THEN 1.0 * provision.total_company_amount / provision.net_company_amount
+                        END,
+                        1.0
+                    ) AS gross_cost_company
+                FROM maintenance_service ms
+                JOIN purchase_service_provision provision
+                    ON provision.id = ms.cost_provision_id
+                   AND provision.active_key IS NOT NULL
+                   AND provision.cancelled_on IS NULL
+                JOIN account_move provision_move
+                    ON provision_move.id = provision.move_id
+                   AND provision_move.state = 'posted'
+            ),
+            invoice_service_cost AS (
+                -- Sin provisión vigente: replicar el importe ANALÍTICO del
+                -- vehículo que origina actual_service_cost (NETO), añadiendo
+                -- el factor REAL de impuestos de cada línea de factura/NC.
+                -- Se conserva el signo del apunte analítico para que las
+                -- notas de crédito disminuyan el costo.
+                -- account_analytic_line.amount está en moneda de compañía.
+                SELECT
+                    ms.id AS service_id,
+                    SUM(
+                        -COALESCE(aal.amount, 0.0)
+                        * COALESCE(
+                            CASE
+                                WHEN ABS(COALESCE(aml.price_subtotal, 0.0)) > 0.0000001
+                                THEN ABS(aml.price_total / aml.price_subtotal)
+                            END,
+                            CASE
+                                WHEN ABS(COALESCE(pol.price_subtotal, 0.0)) > 0.0000001
+                                THEN ABS(pol.price_total / pol.price_subtotal)
+                            END,
+                            1.0
+                        )
+                    ) AS gross_cost_company,
+                    BOOL_OR(
+                        ABS(COALESCE(aml.price_subtotal, 0.0)) <= 0.0000001
+                        AND ABS(COALESCE(aal.amount, 0.0)) > 0.0000001
+                    ) AS tax_estimated
                 FROM maintenance_service ms
                 JOIN maintenance_request mr
                     ON mr.id = ms.maintenance_request_id
@@ -283,8 +325,41 @@ class MaintenancePerformanceReport(models.Model):
                 JOIN account_analytic_line aal
                     ON aal.move_line_id = aml.id
                    AND (__ANALYTIC_VEHICLE_FILTER__)
+                LEFT JOIN purchase_order_line pol
+                    ON pol.id = ms.purchase_order_line_id
+                LEFT JOIN valid_service_provision vsp
+                    ON vsp.service_id = ms.id
                 WHERE ms.purchase_order_line_id IS NOT NULL
                   AND mr.currency_id IS NOT NULL
+                  AND vsp.service_id IS NULL
+                GROUP BY ms.id
+            ),
+            service_cost AS (
+                -- Un solo origen por servicio, siempre con impuestos:
+                -- 1. Provisión vigente: costo imputado × factor de la provisión
+                --    (precio_total / precio_subtotal, congelado en compañía).
+                -- 2. Sin provisión: analítica de facturas/NC × factor de cada
+                --    línea de factura (OC como respaldo).
+                -- 3. Sin fuente válida: cero. No duplicar provisión y factura.
+                SELECT
+                    ms.maintenance_request_id,
+                    SUM(
+                        CASE WHEN vsp.service_id IS NOT NULL
+                             THEN vsp.gross_cost_company
+                             ELSE COALESCE(isc.gross_cost_company, 0.0)
+                        END
+                    ) AS gross_cost_company,
+                    BOOL_OR(
+                        CASE WHEN vsp.service_id IS NOT NULL
+                             THEN FALSE
+                             ELSE COALESCE(isc.tax_estimated, FALSE)
+                        END
+                    ) AS tax_estimated
+                FROM maintenance_service ms
+                LEFT JOIN valid_service_provision vsp
+                    ON vsp.service_id = ms.id
+                LEFT JOIN invoice_service_cost isc
+                    ON isc.service_id = ms.id
                 GROUP BY ms.maintenance_request_id
             ),
             additional_concept_cost AS (

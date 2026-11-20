@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     "name": "Reporte de Rendimiento por Mantenimiento",
-    "version": "17.0.1.2.3",
+    "version": "17.0.1.2.5",
     "category": "Rental",
     "summary": "Rentabilidad de mantenimientos, cargos técnicos, conceptos adicionales, costos e impuestos",
     "author": "Estratego Consulting SAC",
@@ -9,6 +9,7 @@
     "depends": [
         "estratego_maintenance_technical_report",
         "estratego_fleet_vehicle_rental",
+        "estratego_purchase_account_provision",
         "stock_account",
         "purchase",
         "account",
