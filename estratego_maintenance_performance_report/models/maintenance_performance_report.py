@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import re
+
 from odoo import fields, models
 
 
@@ -118,6 +120,30 @@ class MaintenancePerformanceReport(models.Model):
 
     @property
     def _table_query(self):
+        # actual_service_cost es un compute NO almacenado en maintenance.service.
+        # Su cálculo utiliza la cuenta analítica del vehículo, que puede estar
+        # en account_id o en x_plan<ID>_id según el plan analítico de Odoo 17.
+        # Construir la condición sobre las columnas realmente instaladas evita
+        # referenciar una columna no existente en maintenance_service.
+        analytic_line_fields = self.env["account.analytic.line"]._fields
+        analytic_columns = sorted(
+            name
+            for name, field in analytic_line_fields.items()
+            if (name == "account_id" or re.fullmatch(r"x_plan\d+_id", name))
+            and field.type == "many2one"
+            and field.comodel_name == "account.analytic.account"
+            and field.store
+        )
+        if not analytic_columns:
+            raise ValueError(
+                "El reporte requiere las columnas analíticas almacenadas "
+                "de account.analytic.line para calcular costos de servicios."
+            )
+        analytic_vehicle_filter = " OR ".join(
+            f'aal."{column}" = fv.analytic_account_id'
+            for column in analytic_columns
+        )
+
         # Una fila por maintenance.request. Los costos y ventas se calculan desde
         # documentos operativos/contables vigentes; no se almacenan snapshots.
         return r"""
@@ -229,15 +255,36 @@ class MaintenancePerformanceReport(models.Model):
                 GROUP BY mp.maintenance_request_id
             ),
             service_cost AS (
-                -- El costo operativo del servicio es el registrado en la línea
-                -- de mantenimiento, independientemente de su OC o factura.
-                -- actual_service_cost debe estar almacenado y expresado en la
-                -- moneda de la compañía (igual que los demás costos del reporte).
+                -- Equivalente SQL del compute NO almacenado
+                -- maintenance.service._compute_actual_service_cost:
+                --   * solo facturas/notas de crédito proveedor contabilizadas;
+                --   * solo apuntes analíticos de la cuenta del vehículo;
+                --   * gastos negativos y devoluciones positivas.
+                -- account_analytic_line.amount ya está en moneda compañía.
+                -- No usar service_charge, distribución porcentual ni impuestos
+                -- estimados: no forman parte de actual_service_cost.
                 SELECT
                     ms.maintenance_request_id,
-                    SUM(COALESCE(ms.actual_service_cost, 0.0)) AS gross_cost_company,
+                    SUM(-COALESCE(aal.amount, 0.0)) AS gross_cost_company,
                     FALSE AS tax_estimated
                 FROM maintenance_service ms
+                JOIN maintenance_request mr
+                    ON mr.id = ms.maintenance_request_id
+                JOIN fleet_vehicle fv
+                    ON fv.id = mr.fleet_vehicle_id
+                   AND fv.analytic_account_id IS NOT NULL
+                JOIN account_move_line aml
+                    ON aml.purchase_line_id = ms.purchase_order_line_id
+                   AND aml.display_type = 'product'
+                JOIN account_move am
+                    ON am.id = aml.move_id
+                   AND am.state = 'posted'
+                   AND am.move_type IN ('in_invoice', 'in_refund')
+                JOIN account_analytic_line aal
+                    ON aal.move_line_id = aml.id
+                   AND (__ANALYTIC_VEHICLE_FILTER__)
+                WHERE ms.purchase_order_line_id IS NOT NULL
+                  AND mr.currency_id IS NOT NULL
                 GROUP BY ms.maintenance_request_id
             ),
             additional_concept_cost AS (
@@ -1226,4 +1273,4 @@ class MaintenancePerformanceReport(models.Model):
             LEFT JOIN additional_concept_active_invoice acai ON acai.maintenance_request_id = mr.id
             LEFT JOIN account_move legacy ON legacy.id = te.legacy_invoice_move_id
             LEFT JOIN legacy_posted_billing lpb ON lpb.maintenance_request_id = mr.id
-        """
+        """.replace("__ANALYTIC_VEHICLE_FILTER__", analytic_vehicle_filter)
